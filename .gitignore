@@ -1,0 +1,16 @@
+# Dados brutos NUNCA entram no repo
+*.xlsx
+*.xlsm
+*.csv
+
+# JSONs abertos (só os .enc.json criptografados são permitidos em /data)
+data/*.json
+!data/*.enc.json
+data-src/
+
+# Diversos
+node_modules/
+*.log
+Thumbs.db
+.DS_Store
+~$*
