@@ -45,11 +45,9 @@ button{font-family:inherit}
 /* ================= CASCA ================= */
 #app{display:none;min-height:100vh}
 #app.on{display:block}
-header.top{position:fixed;top:0;left:0;right:0;height:58px;z-index:50;background:var(--ink);
+header.top{position:fixed;top:0;left:0;right:0;height:76px;z-index:50;background:var(--ink);
   display:flex;align-items:center;gap:14px;padding:0 20px;border-bottom:1px solid var(--ink-b)}
-header.top img{width:38px;height:38px;object-fit:contain}
-header.top .tt b{display:block;color:#fff;font-size:15.5px;letter-spacing:-.01em;line-height:1.2}
-header.top .tt span{font-size:11px;color:var(--ink-m)}
+header.top .brandimg{height:70px;width:auto;object-fit:contain;margin-left:-8px}
 header.top .sp{flex:1}
 .hchip{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.32);color:#fff;
   border-radius:20px;padding:6px 14px;font-size:12px;white-space:nowrap}
@@ -58,7 +56,7 @@ header.top .sp{flex:1}
   border-radius:9px;padding:7px 14px;font-size:12px;font-weight:600;cursor:pointer}
 .hbtn:hover{background:rgba(255,255,255,.3)}
 
-aside{position:fixed;left:0;top:58px;bottom:0;width:230px;background:var(--ink);
+aside{position:fixed;right:0;top:76px;bottom:0;width:230px;background:var(--ink);
   display:flex;flex-direction:column;overflow-y:auto;z-index:40}
 nav{padding:12px 10px;flex:1}
 .nsec{font-size:10px;color:var(--ink-m);letter-spacing:.16em;text-transform:uppercase;padding:14px 10px 6px}
@@ -67,7 +65,7 @@ nav{padding:12px 10px;flex:1}
 .nav-i svg{width:17px;height:17px;flex:none;stroke:var(--ink-m)}
 .nav-i:hover{background:var(--ink2);color:#fff}
 .nav-i.act{background:linear-gradient(90deg,rgba(255,255,255,.24),rgba(255,255,255,.1));color:#fff}
-.nav-i.act::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:3px;border-radius:3px;
+.nav-i.act::before{content:"";position:absolute;right:0;top:8px;bottom:8px;width:3px;border-radius:3px;
   background:var(--creme)}
 .nav-i.act svg{stroke:#fff}
 .nav-i.soon{opacity:.4;cursor:default}
@@ -80,7 +78,7 @@ nav{padding:12px 10px;flex:1}
 .who a{color:var(--ink-m);text-decoration:underline;cursor:pointer;display:inline-block;margin-top:8px;font-size:11px}
 .who a:hover{color:#fff}
 
-main{margin-left:230px;padding:76px 24px 44px;max-width:1280px}
+main{margin-right:230px;padding:94px 24px 44px;max-width:1280px}
 
 /* filtros */
 .topbar{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;background:var(--card);
@@ -202,13 +200,15 @@ td b{font-weight:650}
   .grid.duo,.grid.trio{grid-template-columns:1fr 1fr}
   a{text-decoration:none;color:inherit}
 }
-  header.top .tt span,.hchip{display:none}
-  aside{position:static;width:100%;flex-direction:row;align-items:center;top:auto;margin-top:58px}
+@media(max-width:700px){
+  .hchip{display:none}
+  header.top .brandimg{height:42px}
+  aside{position:static;width:100%;flex-direction:row;align-items:center;top:auto;margin-top:76px}
   #app.on{display:flex;flex-direction:column}
   nav{display:flex;flex:1;padding:6px;overflow-x:auto}
   .nsec,.who,.nav-i .tag{display:none}
   .nav-i{white-space:nowrap}
-  main{margin-left:0;padding:14px}
+  main{margin-right:0;padding:14px}
   .duo,.trio{grid-template-columns:1fr}
   .chip{margin-left:0}
 }
