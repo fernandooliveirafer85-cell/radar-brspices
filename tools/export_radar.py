@@ -31,6 +31,7 @@ import os
 import re
 import secrets
 import sys
+import unicodedata
 from datetime import datetime
 
 import pandas as pd
@@ -154,8 +155,16 @@ def criptografar(obj, senha):
             "data": b64(cifrado)}
 
 
-def nome_arquivo(senha):
-    return hashlib.sha256(senha.encode("utf-8")).hexdigest()[:16] + ".enc.json"
+def gerar_login(nome):
+    """'042 - WAGNER TORTELLI' → 'wagner.tortelli' (sem prefixo numérico/acentos)."""
+    s = re.sub(r"^\s*\d+\s*-\s*", "", str(nome))
+    s = unicodedata.normalize("NFD", s).encode("ascii", "ignore").decode()
+    return re.sub(r"[^a-z0-9]+", ".", s.lower()).strip(".")
+
+
+def nome_arquivo(login, senha):
+    """O arquivo é localizado pela combinação login+senha (nada de lista aberta)."""
+    return hashlib.sha256(f"{login}|{senha}".encode("utf-8")).hexdigest()[:16] + ".enc.json"
 
 
 def gerar_senha():
@@ -317,8 +326,13 @@ def main():
             senhas[chave] = {"senha": gerar_senha(), "perfil": perfil, "nome": nome}
         if extra:
             senhas[chave].update(extra)
+        # login: e-mail p/ visão completa; nome.sobrenome p/ gerentes e vendedores
+        login = (extra or {}).get("email") or gerar_login(nome)
+        login = login.strip().lower()
+        senhas[chave]["login"] = login
+        payload["escopo"]["login"] = login
         senha = senhas[chave]["senha"]
-        arq = nome_arquivo(senha)
+        arq = nome_arquivo(login, senha)
         senhas[chave]["arquivo"] = arq
         with open(os.path.join(DATA_DIR, arq), "w", encoding="utf-8") as fh:
             json.dump(criptografar(payload, senha), fh)
@@ -343,8 +357,7 @@ def main():
         for chave in sorted(senhas, key=lambda k: (ordem.get(senhas[k]["perfil"], 9), senhas[k]["nome"])):
             s = senhas[chave]
             rotulo = s.get("cargo", s["perfil"].upper())
-            extra = f"  ({s['email']})" if s.get("email") else ""
-            fh.write(f"{rotulo:18s} {s['nome']:32s} senha: {s['senha']}{extra}\n")
+            fh.write(f"{rotulo:18s} {s['nome']:32s} login: {s.get('login',''):38s} senha: {s['senha']}\n")
     print(f"\nSenhas em: {SENHAS_TXT}")
     print(f"Concluído em {(datetime.now() - inicio).total_seconds():.0f}s")
 

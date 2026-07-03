@@ -50,16 +50,17 @@ async function decriptar(payload, senha) {
 }
 
 async function entrar() {
+  const login = $("lg").value.trim().toLowerCase();
   const senha = $("pw").value.trim();
   const err = $("lerr"), btn = $("lbtn");
   err.style.display = "none";
-  if (!senha) return;
+  if (!login || !senha) { err.textContent = "Informe login e senha."; err.style.display = "block"; return; }
   btn.disabled = true; btn.textContent = "Abrindo…";
   try {
     if (!crypto.subtle) throw new Error("Este navegador não suporta criptografia (use HTTPS).");
-    const hash = await sha256hex(senha);
+    const hash = await sha256hex(login + "|" + senha);
     const res = await fetch("data/" + hash.slice(0, 16) + ".enc.json", { cache: "no-store" });
-    if (!res.ok) throw new Error("Senha não encontrada. Confira e tente de novo.");
+    if (!res.ok) throw new Error("Login ou senha não conferem. Confira e tente de novo.");
     S.data = await decriptar(await res.json(), senha);
     if (S.data.schema !== 2) throw new Error("Dados desatualizados — peça ao Fernando para republicar.");
     sessionStorage.setItem("bv_dados", JSON.stringify(S.data));
@@ -133,7 +134,7 @@ function boot() {
   const perfilTxt = d.escopo.cargo ||
     ({ gestor: "GESTÃO — VÊ TUDO", gerente: "GERENTE — SUA EQUIPE", vendedor: "VENDEDOR — SUA CARTEIRA" }[d.escopo.perfil] || d.escopo.perfil);
   $("who-nome").textContent = d.escopo.nome;
-  $("who-email").textContent = d.escopo.email || "";
+  $("who-email").textContent = d.escopo.email || d.escopo.login || "";
   $("who-pill").textContent = "PERFIL: " + perfilTxt;
   $("hchip").innerHTML = `📅 dados até <b>${fmtData(d.atualizado_ate)}</b>`;
 
@@ -693,6 +694,7 @@ function trocarView(v) {
 
 document.addEventListener("DOMContentLoaded", () => {
   $("pw").addEventListener("keydown", (e) => { if (e.key === "Enter") entrar(); });
+  $("lg").addEventListener("keydown", (e) => { if (e.key === "Enter") $("pw").focus(); });
   $("lbtn").addEventListener("click", entrar);
   document.querySelectorAll(".nav-i[data-v]").forEach((el) => el.addEventListener("click", () => trocarView(el.dataset.v)));
   ["f-ger", "f-vend", "f-ano", "f-per"].forEach((id) => $(id)?.addEventListener("change", onFiltro));
