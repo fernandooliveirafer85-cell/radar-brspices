@@ -84,6 +84,13 @@ aside{position:fixed;left:0;top:6px;bottom:0;width:230px;background:var(--ink);
   filter:drop-shadow(0 4px 10px rgba(0,0,0,.3))}
 nav{padding:12px 10px;flex:1}
 .nsec{font-size:10px;color:var(--ink-m);letter-spacing:.16em;text-transform:uppercase;padding:14px 10px 6px}
+.navgrp-h{display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;
+  font-size:11px;color:var(--ink-t);letter-spacing:.12em;text-transform:uppercase;font-weight:700;user-select:none}
+.navgrp-h:hover{color:#fff}
+.gcaret{width:13px;height:13px;stroke:var(--ink-m);transition:transform .18s}
+.navgrp.open .gcaret{transform:rotate(90deg)}
+.navgrp-body{display:none;padding-left:4px}
+.navgrp.open .navgrp-body{display:block}
 .nav-i{display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:10px;cursor:pointer;
   color:var(--ink-t);font-size:13.5px;font-weight:500;margin-bottom:2px;position:relative}
 .nav-i svg{width:17px;height:17px;flex:none;stroke:var(--ink-m)}

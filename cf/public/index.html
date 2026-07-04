@@ -47,11 +47,17 @@
   <aside>
     <div class="sbrand"><img src="assets/img/book-de-vendas.svg" alt="Book de Vendas BR Spices"></div>
     <nav>
-      <div class="nsec">Visão comercial</div>
-      <div class="nav-i act" data-v="geral"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>Overview</div>
-      <div class="nav-i" data-v="metas"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1"/></svg>Metas vs Realizado</div>
-      <div class="nav-i" data-v="posit"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/><circle cx="12" cy="12" r="5.5"/></svg>Positivados</div>
-      <div class="nav-i" data-v="rank"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M8 21V10M12 21V4M16 21v-7"/></svg>Rankings</div>
+      <div class="navgrp open" id="grp-vc">
+        <div class="navgrp-h"><svg class="gcaret" viewBox="0 0 24 24" fill="none" stroke-width="2.4"><path d="M9 6l6 6-6 6"/></svg>Visão comercial</div>
+        <div class="navgrp-body">
+          <div class="nav-i act" data-v="geral"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>Dashboard</div>
+          <div class="nav-i" data-v="fat"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M3 17l5-5 4 4 8-8"/><path d="M14 8h6v6"/></svg>Faturamento</div>
+          <div class="nav-i" data-v="vol"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg>Volume / Mix</div>
+          <div class="nav-i" data-v="metas"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1"/></svg>Metas vs Realizado</div>
+          <div class="nav-i" data-v="posit"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/><circle cx="12" cy="12" r="5.5"/></svg>Positivados</div>
+          <div class="nav-i" data-v="rank"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M8 21V10M12 21V4M16 21v-7"/></svg>Rankings</div>
+        </div>
+      </div>
       <div class="nsec" id="sec-admin" style="display:none">Administração</div>
       <a class="nav-i" id="nav-admin" href="admin.html" style="display:none;text-decoration:none"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="9" cy="8" r="3.5"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M19 8v6M16 11h6"/></svg>Gestão de usuários</a>
       <div class="nsec">Próximas fases</div>
@@ -94,9 +100,9 @@
     </div>
     <div id="print-head" style="display:none"></div>
 
-    <!-- ========== OVERVIEW ========== -->
+    <!-- ========== DASHBOARD ========== -->
     <section class="view on" id="v-geral">
-      <h2 class="pg">Overview</h2>
+      <h2 class="pg">Dashboard</h2>
       <div class="sub">Resumo executivo — valores líquidos de devolução (regra oficial do Book). Use Ano/Período para YTD, meses e quarters.</div>
       <div class="grid kpis" id="kpis"></div>
       <div class="grid duo">
@@ -170,6 +176,20 @@
         <div class="card"><h3>Famílias</h3><ul class="rk" id="rk-fam"></ul>
           <div class="note" id="rk-fam-nota" style="display:none">Famílias mostram o escopo total YTD (não seguem o filtro).</div></div>
       </div>
+    </section>
+
+    <!-- ========== FATURAMENTO (drill-down) ========== -->
+    <section class="view" id="v-fat">
+      <h2 class="pg">Faturamento por cliente</h2>
+      <div class="sub">Do maior para o menor — abra cada cliente para descer em UF › Categoria › Produto, com 2025, 2026 e crescimento.</div>
+      <div class="card"><div id="fat-conteudo"><div class="empty">Carregando…</div></div></div>
+    </section>
+
+    <!-- ========== VOLUME / MIX (batalha naval) ========== -->
+    <section class="view" id="v-vol">
+      <h2 class="pg">Volume / Mix por item</h2>
+      <div class="sub">Itens (linhas, por categoria e curva ABC de venda) × clientes (colunas) — caixas, valor e representatividade no período. Do macro ao micro.</div>
+      <div class="card"><div id="vol-conteudo"><div class="empty">Carregando…</div></div></div>
     </section>
   </main>
 

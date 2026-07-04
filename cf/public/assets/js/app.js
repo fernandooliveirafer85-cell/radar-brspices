@@ -319,12 +319,12 @@ function renderKpis(rows, meses) {
 
   $("kpis").innerHTML =
     kpiCard(IC.fat, "#2f7d7c", `Faturamento<br>líquido · ${rotuloPer()}`, fmtM(fat),
-      crescPill + `vs ${S.ano - 1} mesmo período (${fmtM(ly)})`) +
+      crescPill + `vs ${S.ano - 1} mesmo período (${fmtM(ly)})`, "fat") +
     kpiCard(IC.meta, "#E0A339", "Atingimento<br>da meta", `<span style="color:${atingCor}">${fmtPct(ating)}</span>`,
       meta ? `meta ${fmtM(meta)} · ${gap >= 0 ? "sobra" : "falta"} <b style="color:${gap >= 0 ? "var(--ok)" : "var(--bad)"}">${fmtM(Math.abs(gap))}</b>`
            : "sem meta no período/seleção", "metas") +
     kpiCard(IC.vol, "#9B9741", "Volume<br>(caixas)", vol == null ? "—" : fmtNum(vol),
-      ticket ? `Ticket médio <b>${fmtM(ticket)}</b>` : "Ticket médio —") +
+      ticket ? `Ticket médio <b>${fmtM(ticket)}</b>` : "Ticket médio —", "vol") +
     kpiCard(IC.cart, "#4f9aa0", "Pedidos<br>em carteira", filtrado() ? "—" : fmtM(k.carteira),
       filtrado() ? escT : "snapshot " + fmtData(d.atualizado_ate)) +
     kpiCard(IC.dev, "#C96643", `Devolução<br>${d.periodo.ano} YTD`, filtrado() ? "—" : fmtM(k.devolucao),
@@ -559,7 +559,8 @@ function renderRankings(rows, meses) {
 
 /* ---------------- exportação PDF / Excel ---------------- */
 const viewAtiva = () => document.querySelector(".view.on").id.slice(2);
-const NOMES_VIEW = { geral: "Overview", metas: "Metas vs Realizado", posit: "Positivados", rank: "Rankings" };
+const NOMES_VIEW = { geral: "Dashboard", fat: "Faturamento", vol: "Volume / Mix",
+                     metas: "Metas vs Realizado", posit: "Positivados", rank: "Rankings" };
 
 function contextoTxt() {
   const f = [];
@@ -780,6 +781,30 @@ function trocarView(v) {
   document.querySelectorAll(".nav-i[data-v]").forEach((x) => x.classList.toggle("act", x.dataset.v === v));
   document.querySelectorAll(".view").forEach((x) => x.classList.toggle("on", x.id === "v-" + v));
   window.scrollTo({ top: 0 });
+  if (v === "fat") renderFat();
+  if (v === "vol") renderVol();
+}
+
+/* placeholders informativos (conteúdo real vem na expansão do pipeline de dados) */
+function emConstrucao(titulo, itens) {
+  return `<div style="padding:26px 8px;text-align:center;color:var(--mut)">
+    <div style="font-size:34px">🚧</div>
+    <div style="font-size:15px;font-weight:700;color:var(--txt);margin:8px 0 6px">${titulo}</div>
+    <div style="max-width:560px;margin:0 auto;font-size:13px;line-height:1.7">${itens}</div>
+    <div class="note" style="max-width:560px;margin:16px auto 0;text-align:left">Esta visão precisa de
+      dados em nível de <b>produto/item</b>, que serão gerados na próxima etapa (servidos sob demanda
+      para não pesar o carregamento). Assim que o pipeline for expandido, ela é preenchida automaticamente.</div>
+  </div>`;
+}
+function renderFat() {
+  $("fat-conteudo").innerHTML = emConstrucao("Faturamento por cliente — com drill-down",
+    "Lista de clientes do maior para o menor. Ao abrir um cliente (ex.: <b>ATACADÃO</b>), desce a hierarquia " +
+    "<b>UF › Categoria › Produto</b>, com as colunas <b>2025</b>, <b>2026</b> e <b>% crescimento</b>. Respeita os filtros de gerente/vendedor e período.");
+}
+function renderVol() {
+  $("vol-conteudo").innerHTML = emConstrucao("Volume / Mix — visão “batalha naval”",
+    "Matriz do macro ao micro: <b>itens nas linhas</b> (agrupados por categoria e ordenados pelo volume total da empresa, " +
+    "com a <b>curva ABC</b>) × <b>clientes nas colunas</b> (cliente/estado). Em cada célula: caixas no período, valor e representatividade.");
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -791,6 +816,7 @@ document.addEventListener("DOMContentLoaded", () => {
   ["f-ger", "f-vend", "f-ano"].forEach((id) => $(id)?.addEventListener("change", onFiltro));
   $("btn-reset").addEventListener("click", limparFiltros);
   $("who-sair").addEventListener("click", sair);
+  document.querySelector(".navgrp-h").addEventListener("click", () => $("grp-vc").classList.toggle("open"));
 
   // período (multi-seleção)
   $("per-btn").addEventListener("click", (e) => { e.stopPropagation(); togglePerPanel(); });
