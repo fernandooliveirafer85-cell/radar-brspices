@@ -155,7 +155,7 @@ def ler_metas():
     for c in COLS_MES_META:
         df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
     for col in ["CLIENTE - BANDEIRA", "NOME CLIENTE PROTHEUS", "VEND_BRS", "GR_BRS", "ESTADO",
-                "SEGMENTO | CANAL"]:
+                "SEGMENTO | CANAL", "FASE_INTEGRAÇÃO"]:
         df[col] = df[col].fillna("").astype(str).str.strip()
     return df
 
@@ -222,10 +222,16 @@ def main():
     MAPA_SEG = {"SUPERMERCADOS": "SUPERMERCADO", "CASH CARRY": "CASH AND CARRY",
                 "LOJISTAS": "LOJISTA", "DISTR FOOD": "DIST FOOD",
                 "FUNCIONARIOS": "FUNCIONÁRIOS"}
+    # estrutura (1º nível da hierarquia): BRS / KHC / HÍBRIDO (FASE_INTEGRAÇÃO das metas)
+    MAPA_ESTR = {"BR SPICES": "BRS", "KHC": "KHC", "HÍBRIDO": "HÍBRIDO", "HIBRIDO": "HÍBRIDO"}
+    estr_de = {}
     canal_de = {}
     for _, r in metas.iterrows():
         if r["SEGMENTO | CANAL"]:
             canal_de[r["CNPJ_N"]] = r["SEGMENTO | CANAL"].upper()
+        e = MAPA_ESTR.get(r["FASE_INTEGRAÇÃO"].upper())
+        if e:
+            estr_de[r["CNPJ_N"]] = e
     seg_fat = (fat[fat["segmento"].astype(str).str.strip() != ""]
                .sort_values("EMISSAO").groupby("CNPJ_N")["segmento"].last())
     for cnpj, s in seg_fat.items():
@@ -261,6 +267,8 @@ def main():
             g["ufs"].add(uf)
         if not g["canal"]:
             g["canal"] = canal_de.get(cnpj, "")
+        if not g.get("estr"):
+            g["estr"] = estr_de.get(cnpj, "")
         g["cnpjs"].add(cnpj)
         return g
 
@@ -309,6 +317,7 @@ def main():
         rec = {
             "cliente": g["cliente"], "vend": g["vend"], "ger": g["ger"],
             "canal": g["canal"] or "SEM CANAL",
+            "estr": g.get("estr") or "",
             "uf": ufs[0] if len(ufs) == 1 else (f"{len(ufs)} UFs" if ufs else ""),
             "cnpjs": len(g["cnpjs"]),
             "ult": g["ult"].strftime("%Y-%m-%d") if g["ult"] is not None else None,
@@ -362,10 +371,10 @@ def main():
         e = mix_rows.get(k)
         if e is None:
             e = mix_rows[k] = {"cliente": band, "vend": vend, "ger": ger, "cat": cat,
-                               "m25": [0.0] * 12, "m26": [0.0] * 12, "q26": [0.0] * 12}
+                               "m25": [0.0] * 12, "m26": [0.0] * 12,
+                               "q25": [0.0] * 12, "q26": [0.0] * 12}
         e[f"m{ano % 100}"][mes - 1] += sinal * val
-        if ano == 2026:
-            e["q26"][mes - 1] += sinal * qtd
+        e[f"q{ano % 100}"][mes - 1] += sinal * qtd
 
     gm = f2.groupby(["CNPJ_N", "CAT", "ANO", "MES"])[["TOTAL", "QUANTIDADE"]].sum()
     for (cnpj, cat, ano, mes), r in gm.iterrows():
@@ -385,18 +394,26 @@ def main():
         if e is None:
             e = prod_rows[k] = {"vend": vend, "ger": ger, "prod": prodp or f"ID {pid}",
                                 "cat": cat, "curva": curva,
-                                "m25": [0.0] * 12, "m26": [0.0] * 12, "q26": [0.0] * 12}
+                                "m25": [0.0] * 12, "m26": [0.0] * 12,
+                                "q25": [0.0] * 12, "q26": [0.0] * 12}
         e[f"m{int(ano) % 100}"][int(mes) - 1] += float(r["TOTAL"])
-        if int(ano) == 2026:
-            e["q26"][int(mes) - 1] += float(r["QUANTIDADE"])
+        e[f"q{int(ano) % 100}"][int(mes) - 1] += float(r["QUANTIDADE"])
 
     arr = lambda v: [round(x) for x in v]
+    arrq = lambda v: [round(x, 1) for x in v]
     mix_cats = [{**{k: e[k] for k in ("cliente", "vend", "ger", "cat")},
-                 "m25": arr(e["m25"]), "m26": arr(e["m26"]), "q26": [round(x, 1) for x in e["q26"]]}
+                 "m25": arr(e["m25"]), "m26": arr(e["m26"]),
+                 "q25": arrq(e["q25"]), "q26": arrq(e["q26"])}
                 for e in mix_rows.values() if any(e["m25"]) or any(e["m26"])]
     mix_prods = [{**{k: e[k] for k in ("vend", "ger", "prod", "cat", "curva")},
-                  "m25": arr(e["m25"]), "m26": arr(e["m26"]), "q26": [round(x, 1) for x in e["q26"]]}
+                  "m25": arr(e["m25"]), "m26": arr(e["m26"]),
+                  "q25": arrq(e["q25"]), "q26": arrq(e["q26"])}
                  for e in prod_rows.values() if any(e["m25"]) or any(e["m26"])]
+    # base compradora por PRODUTO (bandeiras distintas comprando nos últimos 6 meses fechados)
+    idx_abs = ano_atual * 12 + mes_atual                       # mês corrente (aberto)
+    fat["ABS"] = fat["ANO"] * 12 + fat["MES"]
+    f6 = fat[(fat["ABS"] >= idx_abs - 6) & (fat["ABS"] < idx_abs)]
+    prod_cli6 = f6.groupby("PRODP")["BAND"].apply(set)
     print(f"MIX: {len(mix_cats)} linhas categoria×cliente | {len(mix_prods)} linhas produto×vendedor "
           f"| dev por produto: {'sim' if tem_dev_prod else 'NÃO (mix bruto)'}")
 
@@ -418,7 +435,7 @@ def main():
             continue
         compradores = linha[linha > 0]
         n_c, n_sem = len(compradores), len(linha) - len(compradores)
-        if n_c < 5 or n_sem < 5:                          # só "vencedoras comprovadas" com lacuna real
+        if n_c < 3 or n_sem < 1:                          # lista completa (o site recorta na tela)
             continue
         giro = float(compradores.median())
         sem = [b for b in top30.index if linha[b] <= 0]
@@ -427,7 +444,7 @@ def main():
                          "giro": round(giro), "potencial": round(giro * n_sem),
                          "alvo": sem[:6]})
     ws_lista.sort(key=lambda x: -x["potencial"])
-    ws_top = ws_lista[:12]
+    ws_top = [w for w in ws_lista if w["compradores"] >= 5 and w["contas_sem"] >= 5][:12]
     conta_gaps = {}
     for w in ws_top[:10]:
         for b in w["alvo"]:
@@ -438,8 +455,9 @@ def main():
         "criterio": "famílias com 5+ contas compradoras e 5+ contas em aberto no top 30 · "
                     "potencial = giro mediano por conta compradora × contas em aberto",
         "whitespace": ws_top,
+        "whitespace_full": ws_lista,
         "contas_alvo": [{"cliente": c, "abertas": n} for c, n in contas_alvo],
-        "pot_total": round(sum(w["potencial"] for w in ws_lista)),
+        "pot_total": round(sum(w["potencial"] for w in ws_top)),
     }
     print(f"WHITESPACE: {len(ws_lista)} famílias com lacuna | potencial top10 = "
           f"{sum(w['potencial'] for w in ws_top[:10]):,.0f}")
@@ -492,6 +510,7 @@ def main():
             "periodo": {"ano": ano_atual, "mes_atual": mes_atual},
             "kpis": {
                 "carteira": round(float(cart[cart["CNPJ_N"].isin(cnpjs_escopo)]["TOTAL"].sum()), 2),
+                "carteira_pedidos": int(cart[cart["CNPJ_N"].isin(cnpjs_escopo)]["PEDIDO"].nunique()),
                 "devolucao": round(float(d_sc[d_sc["ANO"] == ano_atual]["TOTAL"].sum()), 2),
                 "fat_liq_ly_mp": round(float(ly_mp), 2),
             },
@@ -521,7 +540,12 @@ def main():
                 campo, valor = filtro
                 mc = [e for e in mix_cats if e[campo] == valor]
                 mp = [e for e in mix_prods if e[campo] == valor]
-            mix_entries[kv_key] = json.dumps({"mes_atual": mes_atual, "cats": mc, "prods": mp},
+            # base compradora por produto (bandeiras do ESCOPO comprando nos últimos 6 meses fechados)
+            bands_escopo = {t[0]["cliente"] for t in cls}
+            ncli_prod = {p: len(bs & bands_escopo) for p, bs in prod_cli6.items()
+                         if len(bs & bands_escopo)}
+            mix_entries[kv_key] = json.dumps({"mes_atual": mes_atual, "cats": mc, "prods": mp,
+                                              "ncli_prod": ncli_prod},
                                              ensure_ascii=False, separators=(",", ":"))
 
         chave = f"{perfil}|{nome}"

@@ -2,7 +2,7 @@
    Login: senha → SHA-256 → data/<hash>.enc.json → PBKDF2 + AES-GCM (WebCrypto). */
 "use strict";
 
-const S = { data: null, fGer: "", fVend: "", fCanal: "", fCat: "", ano: 2026, meses: [],
+const S = { data: null, fGer: "", fVend: "", fCanal: "", fCat: "", fEstr: "", ano: 2026, meses: [],
             nPos: 100, nCli: 50, fStatus: "", busca: "", buscaMeta: "", fracMes: 1,
             numModo: localStorage.getItem("bv_num") || "detalhado" };
 const $ = (id) => document.getElementById(id);
@@ -188,7 +188,7 @@ function boot() {
   $("per-meses").innerHTML = MESES.map((m, i) =>
     `<label class="permes"><input type="checkbox" data-mes="${i + 1}"><span>${m}</span></label>`).join("");
   atualizarPerBtns();
-  $("f-ano").innerHTML = `<option>2026</option><option>2025</option>`;
+  $("f-ano").innerHTML = `<option>2026</option><option>2025</option><option>2024</option>`;
 
   const gers = [...new Set(d.clientes.map((p) => p.ger))].filter(Boolean).sort();
   if (d.escopo.perfil === "gestor") preencherSelect("f-ger", gers);
@@ -241,13 +241,21 @@ function togglePerPanel(abrir) {
 }
 function periodoRapido(q) {
   const mF = mesFechado();
-  const mapa = { ytd: seq(1, mF), ano: seq(1, 12), h1: seq(1, 6), h2: seq(7, 12),
+  const mapa = { mes: [mF], ytd: seq(1, mF), ano: seq(1, 12), h1: seq(1, 6), h2: seq(7, 12),
                  q1: seq(1, 3), q2: seq(4, 6), q3: seq(7, 9), q4: seq(10, 12), limpar: [] };
   aplicarPeriodo(mapa[q] || seq(1, mF));
 }
+function filtrarEstr(e) {
+  S.fEstr = S.fEstr === e ? "" : e;
+  document.querySelectorAll("#estr-btns button").forEach((b) =>
+    b.classList.toggle("on", b.dataset.e === S.fEstr));
+  S.nPos = 100; S.nCli = 50;
+  renderAll();
+}
 
 function limparFiltros() {
-  S.fGer = ""; S.fVend = ""; S.fCanal = ""; S.fCat = "";   // zera o ESTADO, não só a tela
+  S.fGer = ""; S.fVend = ""; S.fCanal = ""; S.fCat = ""; S.fEstr = "";  // zera o ESTADO, não só a tela
+  document.querySelectorAll("#estr-btns button").forEach((b) => b.classList.remove("on"));
   if ($("f-ger")) $("f-ger").value = "";
   if ($("f-vend")) $("f-vend").value = "";
   $("f-ano").value = "2026";
@@ -263,12 +271,25 @@ function limparFiltros() {
 
 function linhas() {
   let r = S.data.clientes;
+  if (S.fEstr) r = r.filter((p) => (p.estr || "") === S.fEstr);
   if (S.fGer) r = r.filter((p) => p.ger === S.fGer);
   if (S.fVend) r = r.filter((p) => p.vend === S.fVend);
   if (S.fCanal) r = r.filter((p) => (p.canal || "SEM CANAL") === S.fCanal);
   return r;
 }
-const filtrado = () => !!(S.fGer || S.fVend || S.fCanal || S.fCat);
+const filtrado = () => !!(S.fGer || S.fVend || S.fCanal || S.fCat || S.fEstr);
+
+/* cliente ativo = comprou em algum dos últimos 6 meses FECHADOS */
+function ativo6(p) {
+  const { ano, mes_atual } = S.data.periodo;
+  const base = ano * 12 + (mes_atual - 1);
+  for (let k = 6; k >= 1; k--) {
+    const idx = base - k, y = Math.floor(idx / 12), m = (idx % 12) + 1;
+    const a = serie(p, y);
+    if (a && (a[m - 1] || 0) > 0) return true;
+  }
+  return false;
+}
 
 /* pseudo-linhas a partir do cubo MIX quando há filtro de CATEGORIA
    (o cubo principal não abre por categoria; meta/recência não existem nesse recorte) */
@@ -282,6 +303,7 @@ function canalLookup() {
 function linhasMix() {
   const cm = canalLookup();
   let r = MIX.cube.cats.filter((c) => c.cat === S.fCat);
+  if (S.fEstr) { const em = estrLookup(); r = r.filter((c) => (em[c.cliente + "|" + c.vend] || "") === S.fEstr); }
   if (S.fGer) r = r.filter((c) => c.ger === S.fGer);
   if (S.fVend) r = r.filter((c) => c.vend === S.fVend);
   if (S.fCanal) r = r.filter((c) => (cm[c.cliente + "|" + c.vend] || "SEM CANAL") === S.fCanal);
@@ -337,13 +359,15 @@ function filtrarCat(c) {
 function renderChips() {
   $("per-btn").textContent = rotuloPer();
   const f = [S.ano + " · " + rotuloPer()];
+  if (S.fEstr) f.push("Estrutura: " + S.fEstr);
   if (S.fGer) f.push("Gerente: " + S.fGer);
   if (S.fVend) f.push("Vendedor: " + nomeVend(S.fVend));
   if (S.fCanal) f.push("Canal: " + S.fCanal);
-  if (S.fCat) f.push("Categoria: " + S.fCat);
-  $("chip-filtro").textContent = f.join(" · ");
-  $("chip-filtro").style.display = "";
+  if (S.fCat) f.push("Categoria: " + rotuloCat(S.fCat));
+  $("chip-filtro").textContent = "Filtrando: " + f.join(" · ");
 }
+/* categoria sem o prefixo numérico ("07. QUERO | FOOD" → "QUERO | FOOD") */
+const rotuloCat = (c) => String(c || "").replace(/^\s*\d+\.\s*/, "");
 
 function kpiCard(icone, cor, titulo, valor, detalhe, nav) {
   const cls = nav ? ' klick" data-nav="' + nav : "";
@@ -372,36 +396,33 @@ function renderKpis(rows, meses) {
   const noMes = S.ano === d.periodo.ano && meses.includes(d.periodo.mes_atual);
   const positivados = noMes
     ? rows.filter((p) => p.status === "ok").length
-    : rows.filter((p) => { const a = serie(p, S.ano); return a && meses.some((m) => a[m - 1]); }).length;
-  const base = rows.filter((p) => p.meta.some((v) => v) || p.m26.some((v) => v) ||
-    (S.ano === 2025 && p.m25.some((v) => v))).length;
+    : rows.filter((p) => { const a = serie(p, S.ano); return a && meses.some((m) => (a[m - 1] || 0) > 0); }).length;
+  const base = rows.filter(ativo6).length;   // ativos = compra nos últimos 6 meses fechados
   const vol = S.ano === 2026 ? rows.reduce((s, p) => s + meses.reduce((t, m) => t + (p.q26[m - 1] || 0), 0), 0) : null;
   const ativosPer = rows.filter((p) => { const a = serie(p, S.ano); return a && meses.some((m) => a[m - 1]); }).length;
   const ticket = ativosPer ? fat / ativosPer : null;
 
-  /* tons CLAROS p/ leitura sobre o fundo teal dos cards */
-  const OKC = "#c9f5da", BADC = "#ffd2cb", WARNC = "#ffe6b3";
   const crescPill = cresc == null ? "" :
     `<span class="dl ${cresc >= 0 ? "up" : "dn"}">${cresc >= 0 ? "▲" : "▼"} ${fmtPct(Math.abs(cresc))}</span> `;
-  const atingCor = ating == null ? "rgba(255,255,255,.7)" : ating >= 1 ? OKC : ating >= 0.9 ? WARNC : BADC;
-  const escT = '<span style="opacity:.75">escopo total (sem filtro)</span>';
+  const atingCor = ating == null ? "var(--soft)" : ating >= 1 ? "var(--ok)" : ating >= 0.9 ? "var(--warn)" : "var(--bad)";
+  const escT = '<span style="color:var(--soft)">escopo total (sem filtro)</span>';
 
   $("kpis").innerHTML =
-    kpiCard(IC.fat, "#2f7d7c", `Faturamento<br>líquido · ${rotuloPer()}`, fmtM(fat),
-      crescPill + `vs ${S.ano - 1} mesmo período (${fmtM(ly)})`, "fat") +
-    kpiCard(IC.meta, "#E0A339", "Atingimento<br>da meta", `<span style="color:${atingCor}">${fmtPct(ating)}</span>`,
-      meta ? `meta ${fmtM(meta)} · ${gap >= 0 ? "sobra" : "falta"} <b style="color:${gap >= 0 ? OKC : BADC}">${fmtM(Math.abs(gap))}</b>`
+    kpiCard(IC.meta, "#E0A339", "Meta", meta ? fmtM(meta) : "—",
+      meta ? `<b style="color:${atingCor}">${fmtPct(ating)}</b> atingido · ${gap >= 0 ? "sobra" : "falta"} <b style="color:${gap >= 0 ? "var(--ok)" : "var(--bad)"}">${fmtM(Math.abs(gap))}</b>`
            : "sem meta no período/seleção", "metas") +
-    kpiCard(IC.vol, "#9B9741", "Volume<br>(caixas)", vol == null ? "—" : fmtNum(vol),
-      ticket ? `Ticket médio <b>${fmtM(ticket)}</b>` : "Ticket médio —", "vol") +
+    kpiCard(IC.fat, "#2f7d7c", "Faturamento", fmtM(fat),
+      crescPill + `vs ${S.ano - 1} mesmo período (${fmtM(ly)})`, "fat") +
     kpiCard(IC.cart, "#4f9aa0", "Pedidos<br>em carteira", filtrado() ? "—" : fmtM(k.carteira),
-      filtrado() ? escT : "snapshot " + fmtData(d.atualizado_ate)) +
+      filtrado() ? escT : `Qtde de pedidos: <b>${fmtBR(k.carteira_pedidos || 0)}</b>`) +
+    kpiCard(IC.pos, "#8AAB83", "Clientes<br>positivados",
+      S.fCat ? "—" : `${fmtBR(positivados)}<small>/${fmtBR(base)}</small>`,
+      S.fCat ? '<span style="color:var(--soft)">sem recorte por categoria</span>'
+             : (base ? `<b style="color:var(--teal-d)">${fmtPct(positivados / base)}</b> da base ativa (6 m)` : ""), "posit") +
     kpiCard(IC.dev, "#C96643", `Devolução<br>${d.periodo.ano} YTD`, filtrado() ? "—" : fmtM(k.devolucao),
       filtrado() ? escT : "já abatida do líquido") +
-    kpiCard(IC.pos, "#8AAB83", `Positivados<br>${noMes ? "no mês" : "no período"}`,
-      S.fCat ? "—" : `${fmtBR(positivados)}<small>/${fmtBR(base)}</small>`,
-      S.fCat ? '<span style="opacity:.75">sem recorte por categoria</span>'
-             : (base ? `<b>${fmtPct(positivados / base)}</b> da base` : ""), "posit");
+    kpiCard(IC.vol, "#9B9741", "Volume<br>(caixas)", vol == null ? "—" : fmtNum(vol),
+      ticket ? `Ticket médio <b>${fmtM(ticket)}</b>` : "Ticket médio —", "vol");
 
   document.querySelectorAll("#kpis .kpi.klick").forEach((el) =>
     el.addEventListener("click", () => trocarView(el.dataset.nav)));
@@ -431,55 +452,60 @@ function renderEvolucao(rows) {
   $("evo-leg").innerHTML =
     `<span><i style="background:linear-gradient(180deg,#74AFAE,#2f7d7c)"></i>Realizado</span>` +
     `<span><i style="background:#dde3e5"></i>Mesmo mês do ano anterior</span>` +
-    `<span><i style="background:#C96643;height:3px;border-radius:2px"></i>Meta 2026</span>` +
+    `<span><i style="background:#14325c;height:3px;border-radius:2px"></i>Meta 2026</span>` +
     `<span><i style="background:#2e9e63"></i>▲▼ crescimento vs ano anterior</span>` +
     `<span style="margin-left:auto">${MESES[mes_atual - 1]}/${String(ano).slice(2)} = parcial</span>`;
 }
 
 function svgEvolucao(itens) {
-  const W = 1140, H = 300, base = 252, topo = 56;
+  const W = 1140, H = 268, base = 224, topo = 52;
   const n = itens.length, passo = W / n;
   const max = Math.max(1, ...itens.map((i) => Math.max(i.fat, i.ly, i.meta || 0)));
   const y = (v) => base - (v / max) * (base - topo);
-  const wB = Math.min(26, passo * 0.32);
+  const wB = Math.min(34, passo * 0.42);          // barras grossas
   let s = `<svg viewBox="0 0 ${W} ${H}" style="width:100%">`;
   s += '<g stroke="#eef1f2" stroke-width="1">';
   for (let i = 1; i <= 4; i++) s += `<line x1="0" y1="${topo + (base - topo) * i / 4}" x2="${W}" y2="${topo + (base - topo) * i / 4}"/>`;
   s += "</g>";
   s += '<g font-size="11" fill="#8a979d" text-anchor="middle">';
-  itens.forEach((it, i) => { s += `<text x="${passo * i + passo / 2}" y="${H - 8}">${esc(it.label)}</text>`; });
+  itens.forEach((it, i) => { s += `<text x="${passo * i + passo / 2}" y="${H - 6}">${esc(it.label)}</text>`; });
   s += "</g>";
   s += '<defs><linearGradient id="gt" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#74AFAE"/><stop offset="1" stop-color="#2f7d7c"/></linearGradient></defs>';
   itens.forEach((it, i) => {
     const cx = passo * i + passo / 2, dl = `animation-delay:${i * 40}ms`;
     if (it.ly > 0)
-      s += `<rect x="${cx - wB - 1.5}" y="${y(it.ly)}" width="${wB}" height="${base - y(it.ly)}" rx="3" fill="#dde3e5" style="${dl}"><title>${esc(it.label)} ano anterior: ${fmtM(it.ly)}</title></rect>`;
+      s += `<rect x="${cx - wB - 2}" y="${y(it.ly)}" width="${wB}" height="${base - y(it.ly)}" rx="4" fill="#dde3e5" style="${dl}"><title>${esc(it.label)} ano anterior: ${fmtM(it.ly)}</title></rect>`;
     if (it.fat > 0)
-      s += `<rect x="${cx + 1.5}" y="${y(it.fat)}" width="${wB}" height="${base - y(it.fat)}" rx="3" fill="url(#gt)" style="${dl}"><title>${esc(it.label)}: ${fmtM(it.fat)}</title></rect>`;
-    /* rótulos empilhados acima do par de barras:
-       crescimento ▲/▼ (topo) → realizado (meio) → ano anterior (base, cinza) */
+      s += `<rect x="${cx + 2}" y="${y(it.fat)}" width="${wB}" height="${base - y(it.fat)}" rx="4" fill="url(#gt)" style="${dl}"><title>${esc(it.label)}: ${fmtM(it.fat)}</title></rect>`;
+    /* rótulos empilhados acima do par de barras */
     const yTop = y(Math.max(it.fat, it.ly));
     if (it.ly > 0)
-      s += `<text x="${cx}" y="${yTop - 4}" font-size="9.5" fill="#8a979d" text-anchor="middle">${fmtNum(it.ly)}</text>`;
+      s += `<text x="${cx}" y="${yTop - 4}" font-size="10.5" fill="#8a979d" text-anchor="middle">${fmtNum(it.ly)}</text>`;
     if (it.fat > 0)
-      s += `<text x="${cx}" y="${yTop - 16}" font-size="10.5" font-weight="700" fill="#182226" text-anchor="middle">${fmtNum(it.fat)}${it.parcial ? "*" : ""}</text>`;
-    if (it.fat > 0 && it.ly > 0 && !it.parcial) {  /* mês parcial não compara (1 dia vs mês cheio) */
+      s += `<text x="${cx}" y="${yTop - 17}" font-size="12" font-weight="700" fill="#182226" text-anchor="middle">${fmtNum(it.fat)}${it.parcial ? "*" : ""}</text>`;
+    if (it.fat > 0 && it.ly > 0 && !it.parcial) {  /* mês parcial não compara */
       const g = (it.fat - it.ly) / it.ly;
       const cor = g >= 0 ? "#2e9e63" : "#cc4b41";
-      s += `<text x="${cx}" y="${yTop - 29}" font-size="10" font-weight="700" fill="${cor}" text-anchor="middle">${g >= 0 ? "▲" : "▼"} ${fmtBR(Math.abs(g) * 100, 0)}%</text>`;
+      s += `<text x="${cx}" y="${yTop - 31}" font-size="11" font-weight="700" fill="${cor}" text-anchor="middle">${g >= 0 ? "▲" : "▼"} ${fmtBR(Math.abs(g) * 100, 0)}%</text>`;
     }
   });
-  /* linha de META (páprica, tracejada) — pula meses sem meta */
-  let path = "", pontos = "";
-  itens.forEach((it, i) => {
-    if (!it.meta) { path += "|"; return; }
-    const cx = passo * i + passo / 2, cy = y(it.meta);
-    path += `${path.endsWith("|") || path === "" ? "M" : "L"}${cx},${cy} `;
-    pontos += `<circle cx="${cx}" cy="${cy}" r="3" fill="#C96643"><title>${esc(it.label)} meta: ${fmtM(it.meta)}</title></circle>`;
-  });
-  path = path.replaceAll("|", "");
-  if (path.trim())
-    s += `<g class="lm"><path d="${path.trim()}" fill="none" stroke="#C96643" stroke-width="2" stroke-dasharray="6 4" opacity=".85"/>${pontos}</g>`;
+  /* linha de META: curva suave, azul-marinho, valores ABAIXO da linha */
+  const NAVY = "#14325c";
+  const pts = [];
+  itens.forEach((it, i) => { if (it.meta) pts.push({ x: passo * i + passo / 2, y: y(it.meta), it }); });
+  if (pts.length) {
+    let path = `M${pts[0].x},${pts[0].y}`;
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1], b = pts[i], mx = (a.x + b.x) / 2;
+      path += ` C${mx},${a.y} ${mx},${b.y} ${b.x},${b.y}`;
+    }
+    let extras = "";
+    pts.forEach((p) => {
+      extras += `<circle cx="${p.x}" cy="${p.y}" r="3.5" fill="${NAVY}"><title>${esc(p.it.label)} meta: ${fmtM(p.it.meta)}</title></circle>` +
+        `<text x="${p.x}" y="${p.y + 15}" font-size="9.5" font-weight="700" fill="${NAVY}" text-anchor="middle">${fmtNum(p.it.meta)}</text>`;
+    });
+    s += `<g class="lm"><path d="${path}" fill="none" stroke="${NAVY}" stroke-width="2.5" opacity=".9"/>${extras}</g>`;
+  }
   return s + "</svg>";
 }
 
@@ -539,25 +565,30 @@ function renderAnalitica() {
   const a = S.data.analitica;
   if (!a || !(a.whitespace || []).length) { card.style.display = "none"; return; }
   card.style.display = "";
-  $("analitica-janela").textContent =
-    `top 30 clientes · ${a.janela} · potencial bruto ${fmtM(a.pot_total)}`;
+  // com uma CATEGORIA selecionada, mostra as oportunidades DAQUELA categoria (lista completa)
+  const porCat = S.fCat ? (a.whitespace_full || a.whitespace).filter((w) => w.cat === S.fCat) : null;
+  const lista = porCat ? porCat.slice(0, 10) : a.whitespace.slice(0, 10);
+  $("analitica-janela").textContent = porCat
+    ? `categoria ${rotuloCat(S.fCat)} · top 30 clientes · ${a.janela}`
+    : `top 30 clientes · ${a.janela} · potencial bruto ${fmtM(a.pot_total)}`;
+  const corpo = lista.map((w, i) =>
+    `<tr><td class="r"><b>${i + 1}</b></td><td><b>${esc(w.fam)}</b></td>
+     <td style="color:var(--mut);font-size:10.5px">${esc(rotuloCat(w.cat))}</td>
+     <td class="r">${w.compradores}</td><td class="r">${w.contas_sem}</td>
+     <td class="r">${fmtV(w.giro)}</td>
+     <td class="r"><b style="color:var(--ok)">${fmtV(w.potencial)}</b></td>
+     <td style="font-size:10.5px;color:var(--mut)">${w.alvo.map(esc).join(" · ")}</td></tr>`).join("");
   $("dash-ws").innerHTML =
     `<div class="twrap"><table class="fat-tab"><thead><tr>
-      <th class="r">#</th><th>FAMÍLIA CAMPEÃ</th><th>Categoria</th>
+      <th class="r">#</th><th>FAMÍLIA</th><th>Categoria</th>
       <th class="r">Compram</th><th class="r">Contas s/</th><th class="r">Giro/conta</th>
       <th class="r">Potencial</th><th>Contas-alvo (não compram a família)</th></tr></thead><tbody>` +
-    a.whitespace.slice(0, 10).map((w, i) =>
-      `<tr><td class="r"><b>${i + 1}</b></td><td><b>${esc(w.fam)}</b></td>
-       <td style="color:var(--mut);font-size:10.5px">${esc(w.cat)}</td>
-       <td class="r">${w.compradores}</td><td class="r">${w.contas_sem}</td>
-       <td class="r">${fmtV(w.giro)}</td>
-       <td class="r"><b style="color:var(--ok)">${fmtV(w.potencial)}</b></td>
-       <td style="font-size:10.5px;color:var(--mut)">${w.alvo.map(esc).join(" · ")}</td></tr>`).join("") +
+    (corpo || `<tr><td colspan="8" class="empty">Sem lacunas relevantes nesta categoria — todas as contas-chave já compram. 🎉</td></tr>`) +
     `</tbody></table></div>
      <div class="note">🎯 <b>Contas-alvo</b> (mais famílias campeãs em aberto):
        ${a.contas_alvo.map((c) => `<b>${esc(c.cliente)}</b> (${c.abertas})`).join(" · ")}.<br>
        ${esc(a.criterio)}. Whitespace real: a conta não comprou <b>nenhuma gramatura</b> da família na janela.
-       Análise global do top 30 — não segue os filtros da página.</div>`;
+       Análise do top 30 do escopo total — segue apenas o filtro de categoria.</div>`;
 }
 
 /* ---------- Metas ---------- */
@@ -779,35 +810,67 @@ function renderDashRank() {
   const totC = can.reduce((s, x) => s + x.f26, 0);
   tabelaDash("dash-canal", "canal", [...colsDash("CANAL", totC), ...extra], can, 15, filtrarCanal, S.fCanal);
 
+  // base ativa (compra nos últimos 6 meses fechados) no recorte atual — denominador dos faróis
+  const ativosN = rows.filter(ativo6).length || 1;
+  const dotBase = (x) => {
+    const p = x.ncli / ativosN;
+    const cls = p >= 0.6 ? "ok" : p >= 0.3 ? "med" : "bad";
+    return `<span class="dotf ${cls}"></span>${fmtBR(Math.min(1, p) * 100, 0)}%`;
+  };
+  const colsVolBase = (totV26) => [
+    { k: "v25", t: "Vol 2025", r: 1, v: (x) => x.v25, f: (x) => fmtBR(x.v25, 0) },
+    { k: "v26", t: "Vol 2026", r: 1, v: (x) => x.v26, f: (x) => `<b>${fmtBR(x.v26, 0)}</b>` },
+    { k: "crv", t: "Cresc. cx", r: 1, v: (x) => x.crv,
+      f: (x) => `<span class="farolp ${farol(x.crv)}">${x.crv == null ? "—" : (x.crv >= 0 ? "" : "−") + fmtBR(Math.abs(x.crv) * 100, 0) + "%"}</span>` },
+    { k: "reprv", t: "% Repr. cx", r: 1, v: (x) => x.v26, f: (x) => fmtBR(x.v26 / (totV26 || 1) * 100, 1) + "%" },
+    { k: "ncli", t: "Base compr.", r: 1, v: (x) => x.ncli, f: (x) => fmtBR(x.ncli) },
+    { k: "pbase", t: "% da base", r: 1, v: (x) => x.ncli, f: dotBase },
+  ];
+
   // Categorias e Produtos (cubo MIX, lazy) → clique na categoria filtra a página
   if (!MIX.cube) { carregarMix(); } else {
-    const meses2 = meses;
-    const colVol = { k: "v26", t: "Vol 2026 cx", r: 1, v: (x) => x.v26, f: (x) => fmtBR(x.v26, 0) };
-    const cats = dashCategorias(meses2);
+    const cats = dashCategorias(meses);
     const totCat = cats.reduce((s, x) => s + x.f26, 0);
-    const colsCat = colsDash("CATEGORIA", totCat).filter((c) => !["meta", "ating", "gap"].includes(c.k));
-    tabelaDash("dash-cat", "cat", [...colsCat, colVol], cats, 30, filtrarCat, S.fCat);
+    const totVCat = cats.reduce((s, x) => s + x.v26, 0);
+    const colsCat = colsDash("FAMÍLIA", totCat).filter((c) => !["meta", "ating", "gap"].includes(c.k));
+    colsCat[0].f = (x) => `<b>${esc(rotuloCat(x.nome))}</b>`;
+    tabelaDash("dash-cat", "cat", [...colsCat, ...colsVolBase(totVCat)], cats, 30, filtrarCat, S.fCat);
 
-    const prods = dashProdutos(meses2);
+    const prods = dashProdutos(meses);
     const totP = prods.reduce((s, x) => s + x.f26, 0);
+    const totVP = prods.reduce((s, x) => s + x.v26, 0);
     const colsProd = colsDash("PRODUTO", totP).filter((c) => !["meta", "ating", "gap"].includes(c.k));
     colsProd.splice(1, 0,
-      { k: "cat", t: "Categoria", v: (x) => x.cat, f: (x) => `<span style="color:var(--mut);font-size:10.5px">${esc(x.cat)}</span>` },
-      { k: "curva", t: "ABC", v: (x) => x.curva || "—", f: (x) => x.curva ? `<span class="curva c-${esc(x.curva)}">${esc(x.curva)}</span>` : "—" });
-    tabelaDash("dash-prod", "prod", [...colsProd, colVol], prods, 20, null);
+      { k: "cat", t: "Família", v: (x) => rotuloCat(x.cat),
+        f: (x) => `<span style="color:var(--mut);font-size:10.5px">${esc(rotuloCat(x.cat))}</span>` },
+      { k: "curva", t: "ABC", v: (x) => x.curva || "—",
+        f: (x) => x.curva ? `<span class="curva c-${esc(x.curva)}">${esc(x.curva)}</span>` : "—" });
+    tabelaDash("dash-prod", "prod", [...colsProd, ...colsVolBase(totVP)], prods, 30, null);
   }
 
-  // Regiões do Brasil e UFs (cubo de UF do Faturamento, lazy)
+  // Regiões do Brasil (clique filtra os estados) e Estados por nome
   if (!FAT.cube) { carregarFatCube(); } else {
     const colCli = { k: "cli", t: "Clientes", r: 1, v: (x) => x.clientes, f: (x) => fmtBR(x.clientes) };
     const regs = dashRegioes(meses, true);
     const totR = regs.reduce((s, x) => s + x.f26, 0);
-    tabelaDash("dash-reg", "reg", [...colsDash("REGIÃO", totR), colCli], regs, 10, null);
-    const ufs = dashRegioes(meses, false);
+    tabelaDash("dash-reg", "reg", [...colsDash("REGIÃO", totR), colCli], regs, 10,
+      (n) => { DASH.regSel = DASH.regSel === n ? "" : n; renderDashRank(); }, DASH.regSel);
+    let ufs = dashRegioes(meses, false);
+    if (DASH.regSel) ufs = ufs.filter((u) => (REGIAO_UF[u.nome] || "—") === DASH.regSel);
+    $("uf-info").textContent = DASH.regSel ? `região: ${DASH.regSel} (clique na região de novo para ver todos)` : "";
     const totU = ufs.reduce((s, x) => s + x.f26, 0);
-    tabelaDash("dash-uf", "uf", [...colsDash("UF", totU), colCli], ufs, 30, null);
+    const colsUF = colsDash("ESTADO", totU);
+    colsUF[0].f = (x) => `<b>${esc(UF_NOME[x.nome] || x.nome)}</b> <span style="color:var(--soft);font-size:10px">${esc(x.nome)}</span>`;
+    tabelaDash("dash-uf", "uf", [...colsUF, colCli], ufs, 30, null);
   }
 }
+
+const UF_NOME = { AC: "Acre", AL: "Alagoas", AP: "Amapá", AM: "Amazonas", BA: "Bahia", CE: "Ceará",
+  DF: "Distrito Federal", ES: "Espírito Santo", GO: "Goiás", MA: "Maranhão", MT: "Mato Grosso",
+  MS: "Mato Grosso do Sul", MG: "Minas Gerais", PA: "Pará", PB: "Paraíba", PR: "Paraná",
+  PE: "Pernambuco", PI: "Piauí", RJ: "Rio de Janeiro", RN: "Rio Grande do Norte",
+  RS: "Rio Grande do Sul", RO: "Rondônia", RR: "Roraima", SC: "Santa Catarina", SE: "Sergipe",
+  SP: "São Paulo", TO: "Tocantins" };
 
 /* carregamentos lazy dos cubos (uma vez; re-renderiza ao chegar) */
 function carregarMix() {
@@ -826,39 +889,65 @@ function carregarFatCube() {
     .catch(() => {});
 }
 
-/* Categorias: agrega o cubo MIX respeitando gerente/vendedor/canal */
+function estrLookup() {
+  if (S._estrMap) return S._estrMap;
+  const m = {};
+  for (const p of S.data.clientes) m[p.cliente + "|" + p.vend] = p.estr || "";
+  return (S._estrMap = m);
+}
+/* comprou a categoria/linha em algum dos últimos 6 meses fechados? (m26/m25 do MIX) */
+function comprou6(e) {
+  const { ano, mes_atual } = S.data.periodo;
+  const base = ano * 12 + (mes_atual - 1);
+  for (let k = 6; k >= 1; k--) {
+    const idx = base - k, y = Math.floor(idx / 12), m = (idx % 12) + 1;
+    const a = y === 2026 ? e.m26 : y === 2025 ? e.m25 : null;
+    if (a && (a[m - 1] || 0) > 0) return true;
+  }
+  return false;
+}
+const volDash = (g) => ({ ...g, crv: g.v25 > 0 ? (g.v26 - g.v25) / g.v25 : (g.v26 > 0 ? 1 : null) });
+
+/* Categorias: agrega o cubo MIX respeitando estrutura/gerente/vendedor/canal */
 function dashCategorias(meses) {
-  const cm = canalLookup();
+  const cm = canalLookup(), em = estrLookup();
   let r = MIX.cube.cats;
+  if (S.fEstr) r = r.filter((c) => (em[c.cliente + "|" + c.vend] || "") === S.fEstr);
   if (S.fGer) r = r.filter((c) => c.ger === S.fGer);
   if (S.fVend) r = r.filter((c) => c.vend === S.fVend);
   if (S.fCanal) r = r.filter((c) => (cm[c.cliente + "|" + c.vend] || "SEM CANAL") === S.fCanal);
+  if (S.fCat) r = r.filter((c) => c.cat === S.fCat);   // isolar a categoria clicada
   const map = {};
   for (const c of r) {
-    const g = (map[c.cat] ??= { nome: c.cat, f25: 0, f26: 0, v26: 0 });
+    const g = (map[c.cat] ??= { nome: c.cat, f25: 0, f26: 0, v25: 0, v26: 0, _cli: new Set() });
     g.f26 += somaMeses(c.m26, meses);
     g.f25 += somaMesesPr(c.m25, meses);
     g.v26 += somaMeses(c.q26, meses);
+    g.v25 += somaMesesPr(c.q25 || [], meses);
+    if (comprou6(c)) g._cli.add(c.cliente);   // base compradora (6 meses fechados)
   }
   return Object.values(map).filter((g) => g.f25 || g.f26)
-    .map((g) => ({ ...g, ...metDash(g.f25, g.f26, 0) }));
+    .map((g) => volDash({ ...g, ncli: g._cli.size, ...metDash(g.f25, g.f26, 0) }));
 }
-/* Produtos: cubo MIX produto×vendedor (canal não recorta produtos) */
+/* Produtos: cubo MIX produto×vendedor (base compradora vem pronta do ETL, por escopo) */
 function dashProdutos(meses) {
   let r = MIX.cube.prods;
   if (S.fGer) r = r.filter((p) => p.ger === S.fGer);
   if (S.fVend) r = r.filter((p) => p.vend === S.fVend);
   if (S.fCat) r = r.filter((p) => p.cat === S.fCat);
+  const ncli = MIX.cube.ncli_prod || {};
   const map = {};
   for (const p of r) {
-    const g = (map[p.prod] ??= { nome: p.prod, cat: p.cat, curva: p.curva, f25: 0, f26: 0, v26: 0 });
+    const g = (map[p.prod] ??= { nome: p.prod, cat: p.cat, curva: p.curva,
+                                 f25: 0, f26: 0, v25: 0, v26: 0, ncli: ncli[p.prod] || 0 });
     g.f26 += somaMeses(p.m26, meses);
     g.f25 += somaMesesPr(p.m25, meses);
     g.v26 += somaMeses(p.q26, meses);
+    g.v25 += somaMesesPr(p.q25 || [], meses);
     if (!g.curva && p.curva) g.curva = p.curva;
   }
   return Object.values(map).filter((g) => g.f25 || g.f26)
-    .map((g) => ({ ...g, ...metDash(g.f25, g.f26, 0) }));
+    .map((g) => volDash({ ...g, ...metDash(g.f25, g.f26, 0) }));
 }
 /* Regiões/UFs: cubo de UF do Faturamento respeitando gerente/vendedor/canal */
 const REGIAO_UF = { SP: "SUDESTE", RJ: "SUDESTE", MG: "SUDESTE", ES: "SUDESTE",
@@ -868,8 +957,9 @@ const REGIAO_UF = { SP: "SUDESTE", RJ: "SUDESTE", MG: "SUDESTE", ES: "SUDESTE",
   PA: "NORTE", AM: "NORTE", RO: "NORTE", RR: "NORTE", AP: "NORTE", AC: "NORTE", TO: "NORTE",
   MT: "CENTRO-OESTE", MS: "CENTRO-OESTE", GO: "CENTRO-OESTE", DF: "CENTRO-OESTE" };
 function dashRegioes(meses, porRegiao) {
-  const cm = canalLookup();
+  const cm = canalLookup(), em = estrLookup();
   let r = FAT.cube.clientes;
+  if (S.fEstr) r = r.filter((c) => (em[c.cliente + "|" + c.vend] || "") === S.fEstr);
   if (S.fGer) r = r.filter((c) => c.ger === S.fGer);
   if (S.fVend) r = r.filter((c) => c.vend === S.fVend);
   if (S.fCanal) r = r.filter((c) => (cm[c.cliente + "|" + c.vend] || "SEM CANAL") === S.fCanal);
@@ -1258,8 +1348,10 @@ function agregarPorBandeira(linhas) {
 /* filtra por gerente/vendedor, agrega por bandeira e calcula métricas + TOTAL do escopo */
 function calcFat() {
   let linhas = FAT.cube.clientes;
+  if (S.fEstr) { const em = estrLookup(); linhas = linhas.filter((c) => (em[c.cliente + "|" + c.vend] || "") === S.fEstr); }
   if (S.fGer) linhas = linhas.filter((c) => c.ger === S.fGer);
   if (S.fVend) linhas = linhas.filter((c) => c.vend === S.fVend);
+  if (S.fCanal) { const cm = canalLookup(); linhas = linhas.filter((c) => (cm[c.cliente + "|" + c.vend] || "SEM CANAL") === S.fCanal); }
   linhas = agregarPorBandeira(linhas);
   if (FAT.busca) {
     const b = FAT.busca.toLowerCase();
@@ -1408,6 +1500,8 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   document.querySelectorAll(".perquick button").forEach((b) =>
     b.addEventListener("click", () => periodoRapido(b.dataset.q)));
+  document.querySelectorAll("#estr-btns button").forEach((b) =>
+    b.addEventListener("click", () => filtrarEstr(b.dataset.e)));
 
   // rodapé: modo de números + atualizar + baixar
   const rotuloNum = () => $("btn-num").textContent =

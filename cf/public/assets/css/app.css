@@ -109,34 +109,42 @@ nav{padding:12px 10px;flex:1}
 .who a{color:var(--ink-m);text-decoration:underline;cursor:pointer;display:inline-block;margin-top:8px;font-size:11px}
 .who a:hover{color:#fff}
 
-main{margin-left:230px;padding:26px 24px 66px;max-width:1280px}
+main{margin-left:230px;padding:22px 24px 66px;max-width:1400px}
 
-/* filtros compactos: rótulo ao lado do campo, fonte executiva padronizada */
-.topbar{display:flex;align-items:center;gap:16px;flex-wrap:wrap;background:var(--card);
-  border:1px solid var(--line);border-radius:12px;padding:10px 16px;margin-bottom:18px;box-shadow:var(--shadow)}
-.f{display:flex;align-items:center;gap:7px}
-.f label{font-size:11px;color:var(--soft);letter-spacing:.06em;text-transform:uppercase;font-weight:700}
-.f select,.perbtn{background:#f6f8f8;color:var(--txt);border:1px solid var(--line);border-radius:8px;
-  padding:5px 9px;font-size:11px;font-weight:500;height:30px;cursor:pointer}
-.f select{min-width:88px;max-width:190px}
+/* filtros compactos: barra FINA, rótulo ao lado do campo */
+.topbar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;background:var(--card);
+  border:1px solid var(--line);border-radius:10px;padding:5px 8px;margin-bottom:4px;box-shadow:var(--shadow)}
+.f{display:flex;align-items:center;gap:5px}
+.f label{font-size:9.5px;color:var(--soft);letter-spacing:.05em;text-transform:uppercase;font-weight:700}
+.f select,.perbtn{background:#f6f8f8;color:var(--txt);border:1px solid var(--line);border-radius:7px;
+  padding:3px 7px;font-size:10.5px;font-weight:500;height:24px;cursor:pointer}
+.f select{min-width:60px;max-width:132px}
 .f select option{font-size:11px;font-weight:400}
-.reset{background:none;border:1px solid var(--line);color:var(--mut);border-radius:8px;
-  padding:0 12px;height:32px;font-size:12px;cursor:pointer;font-weight:600}
+.reset{background:none;border:1px solid var(--line);color:var(--mut);border-radius:7px;
+  padding:0 10px;height:24px;font-size:11px;cursor:pointer;font-weight:600}
 .reset:hover{color:var(--bad);border-color:var(--bad)}
-.chip{margin-left:auto;background:linear-gradient(135deg,rgba(79,154,160,.12),rgba(79,154,160,.05));
-  border:1px solid rgba(79,154,160,.35);color:var(--teal-d);border-radius:20px;padding:6px 14px;
-  font-size:11.5px;font-weight:600;white-space:nowrap}
+/* filtros ativos: texto itálico discreto ABAIXO da barra, alinhado à direita */
+.filtro-linha{text-align:right;min-height:15px;margin:0 4px 12px 0}
+#chip-filtro{font-size:11px;font-style:italic;color:var(--mut)}
 
-/* seletor de período multi-seleção */
+/* estrutura BRS / KHC / HÍBRIDO (1º nível da hierarquia) */
+.estr{display:flex;gap:0;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.estr button{background:#f6f8f8;border:none;border-right:1px solid var(--line);color:var(--mut);
+  width:52px;height:24px;font-size:10px;font-weight:700;cursor:pointer;letter-spacing:.02em}
+.estr button:last-child{border-right:0}
+.estr button:hover{color:var(--teal-d)}
+.estr button.on{background:linear-gradient(180deg,var(--aqua),var(--teal-d));color:#fff}
+
+/* seletor de meses (dropdown) + botões de período inline */
 .f-per{position:relative}
-.perbtn{min-width:150px;text-align:left;display:flex;align-items:center;gap:6px}
+.perbtn{min-width:100px;text-align:left;display:flex;align-items:center;gap:6px}
 .perbtn::after{content:"▾";margin-left:auto;color:var(--soft)}
-.perpanel{position:absolute;top:38px;left:0;z-index:30;background:var(--card);border:1px solid var(--line);
-  border-radius:12px;box-shadow:0 16px 38px -12px rgba(0,0,0,.28);padding:10px;width:216px;display:none}
+.perpanel{position:absolute;top:30px;left:0;z-index:30;background:var(--card);border:1px solid var(--line);
+  border-radius:12px;box-shadow:0 16px 38px -12px rgba(0,0,0,.28);padding:10px;width:180px;display:none}
 .perpanel.on{display:block}
-.perquick{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--line2)}
+.perquick{display:flex;flex-wrap:wrap;gap:3px}
 .perquick button{background:#f2f5f5;border:1px solid var(--line);color:var(--mut);border-radius:20px;
-  padding:3px 9px;font-size:10.5px;font-weight:700;cursor:pointer}
+  padding:0 5px;height:21px;font-size:9.5px;font-weight:700;cursor:pointer}
 .perquick button:hover{border-color:var(--teal);color:var(--teal-d)}
 .permeses{display:flex;flex-direction:column;gap:1px;max-height:216px;overflow-y:auto}
 .permes{display:flex;align-items:center;gap:8px;padding:4px 6px;border-radius:6px;font-size:12px;
@@ -153,25 +161,29 @@ h2.pg::before{content:"";width:9px;height:9px;background:var(--teal);transform:r
 /* KPI cards */
 .grid{display:grid;gap:14px}
 .kpis{grid-template-columns:repeat(auto-fit,minmax(185px,1fr));margin-bottom:16px}
-.kpi{background:linear-gradient(180deg,var(--aqua),var(--teal-d));border:1px solid rgba(255,255,255,.16);
-  border-radius:16px;padding:15px 16px 14px;color:#fff;
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:7px 13px 7px;
+  position:relative;overflow:hidden;
   box-shadow:var(--shadow);transition:transform .15s,box-shadow .15s}
-.kpi:hover{transform:translateY(-2px);box-shadow:0 4px 6px rgba(16,24,26,.1),0 16px 34px -14px rgba(16,24,26,.3)}
+.kpi::after{content:"";position:absolute;top:0;left:0;right:0;height:4px;
+  background:linear-gradient(90deg,var(--aqua),var(--teal-d))}   /* faixa azul superior */
+.kpi:hover{transform:translateY(-2px);box-shadow:0 4px 6px rgba(16,24,26,.06),0 16px 34px -14px rgba(16,24,26,.18)}
 .kpi.klick{cursor:pointer}
-.kpi.klick::before{content:"↗";position:absolute;top:10px;right:12px;color:rgba(255,255,255,.8);font-size:12px;opacity:0;transition:opacity .15s}
+.kpi.klick::before{content:"↗";position:absolute;top:8px;right:11px;color:var(--soft);font-size:12px;opacity:0;transition:opacity .15s}
 .kpi.klick:hover::before{opacity:1}
-.kpi .hd{display:flex;align-items:center;gap:9px;margin-bottom:9px}
-.kpi .ic{width:32px;height:32px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex:none;
-  background:rgba(255,255,255,.92)}
-.kpi .ic svg{width:17px;height:17px}
-.kpi .t{font-size:10.5px;color:rgba(255,255,255,.85);letter-spacing:.1em;text-transform:uppercase;font-weight:700;line-height:1.3}
-.kpi .v{font-size:25px;font-weight:700;letter-spacing:-.03em;font-variant-numeric:tabular-nums;color:#fff}
-.kpi .v small{font-size:14px;color:rgba(255,255,255,.75);font-weight:600}
-.kpi .d{font-size:11.5px;margin-top:4px;color:rgba(255,255,255,.85)}
-.kpi .d b{color:#fff}
-.dl{display:inline-flex;align-items:center;gap:4px;border-radius:20px;padding:1.5px 8px;font-size:11px;font-weight:700}
-.kpi .dl.up{background:rgba(255,255,255,.2);color:#c9f5da} .kpi .dl.dn{background:rgba(255,255,255,.2);color:#ffd2cb}
+.kpi .hd{display:flex;align-items:center;gap:8px;margin:3px 0 5px}
+.kpi .ic{width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex:none;
+  background:#eef4f4}
+.kpi .ic svg{width:15px;height:15px}
+.kpi .t{font-size:10px;color:var(--soft);letter-spacing:.08em;text-transform:uppercase;font-weight:700;line-height:1.25}
+.kpi .v{font-size:20px;font-weight:700;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.kpi .v small{font-size:12.5px;color:var(--soft);font-weight:600}
+.kpi .d{font-size:10.5px;margin-top:1px;color:var(--mut);line-height:1.35}
+.dl{display:inline-flex;align-items:center;gap:4px;border-radius:20px;padding:1px 7px;font-size:10.5px;font-weight:700}
 .dl.up{background:var(--ok-bg);color:var(--ok)} .dl.dn{background:var(--bad-bg);color:var(--bad)}
+
+/* bolinha-farol p/ % da base compradora */
+.dotf{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:0}
+.dotf.ok{background:var(--ok)} .dotf.med{background:#e0a339} .dotf.bad{background:var(--bad)}
 
 /* gráfico de evolução: barras crescem ao (re)filtrar */
 #evo-chart rect{transform-box:fill-box;transform-origin:bottom;animation:barGrow .6s cubic-bezier(.22,.75,.3,1) both}
