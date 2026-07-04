@@ -171,10 +171,11 @@ function boot() {
   const dt = new Date(d.atualizado_ate + "T12:00:00");
   S.fracMes = dt.getDate() / new Date(dt.getFullYear(), dt.getMonth() + 1, 0).getDate();
 
-  // período: YTD por padrão + botões de mês
+  // período: YTD por padrão + meses com checkbox
   S.meses = seq(1, d.periodo.mes_atual);
   $("per-meses").innerHTML = MESES.map((m, i) =>
-    `<button type="button" data-mes="${i + 1}">${m}</button>`).join("");
+    `<label class="permes"><input type="checkbox" data-mes="${i + 1}"><span>${m}</span></label>`).join("");
+  atualizarPerBtns();
   $("f-ano").innerHTML = `<option>2026</option><option>2025</option>`;
 
   const gers = [...new Set(d.clientes.map((p) => p.ger))].filter(Boolean).sort();
@@ -212,8 +213,8 @@ function onFiltro() {
 
 /* ---- painel de período ---- */
 function atualizarPerBtns() {
-  document.querySelectorAll("#per-meses button").forEach((b) =>
-    b.classList.toggle("sel", S.meses.includes(+b.dataset.mes)));
+  document.querySelectorAll("#per-meses input[data-mes]").forEach((cb) =>
+    cb.checked = S.meses.includes(+cb.dataset.mes));
   $("per-btn").textContent = rotuloPer();
 }
 function aplicarPeriodo(meses) {
@@ -229,7 +230,7 @@ function togglePerPanel(abrir) {
 function periodoRapido(q) {
   const mA = S.data.periodo.mes_atual;
   const mapa = { ytd: seq(1, mA), ano: seq(1, 12), h1: seq(1, 6), h2: seq(7, 12),
-                 q1: seq(1, 3), q2: seq(4, 6), q3: seq(7, 9), q4: seq(10, 12) };
+                 q1: seq(1, 3), q2: seq(4, 6), q3: seq(7, 9), q4: seq(10, 12), limpar: [] };
   aplicarPeriodo(mapa[q] || seq(1, mA));
 }
 
@@ -795,10 +796,10 @@ document.addEventListener("DOMContentLoaded", () => {
   $("per-btn").addEventListener("click", (e) => { e.stopPropagation(); togglePerPanel(); });
   $("per-panel").addEventListener("click", (e) => e.stopPropagation());
   document.addEventListener("click", () => togglePerPanel(false));
-  $("per-meses").addEventListener("click", (e) => {
+  $("per-meses").addEventListener("change", (e) => {
     const m = e.target.dataset.mes; if (!m) return;
-    const n = +m, sel = S.meses.includes(n);
-    aplicarPeriodo(sel ? S.meses.filter((x) => x !== n) : [...S.meses, n]);
+    const n = +m;
+    aplicarPeriodo(e.target.checked ? [...S.meses, n] : S.meses.filter((x) => x !== n));
   });
   document.querySelectorAll(".perquick button").forEach((b) =>
     b.addEventListener("click", () => periodoRapido(b.dataset.q)));

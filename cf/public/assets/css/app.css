@@ -124,16 +124,17 @@ main{margin-left:230px;padding:26px 24px 66px;max-width:1280px}
 .perbtn{min-width:150px;text-align:left;display:flex;align-items:center;gap:6px}
 .perbtn::after{content:"▾";margin-left:auto;color:var(--soft)}
 .perpanel{position:absolute;top:38px;left:0;z-index:30;background:var(--card);border:1px solid var(--line);
-  border-radius:12px;box-shadow:0 16px 38px -12px rgba(0,0,0,.28);padding:12px;width:280px;display:none}
+  border-radius:12px;box-shadow:0 16px 38px -12px rgba(0,0,0,.28);padding:10px;width:216px;display:none}
 .perpanel.on{display:block}
-.perquick{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--line2)}
+.perquick{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--line2)}
 .perquick button{background:#f2f5f5;border:1px solid var(--line);color:var(--mut);border-radius:20px;
-  padding:5px 12px;font-size:11.5px;font-weight:700;cursor:pointer}
+  padding:3px 9px;font-size:10.5px;font-weight:700;cursor:pointer}
 .perquick button:hover{border-color:var(--teal);color:var(--teal-d)}
-.permeses{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
-.permeses button{background:#f6f8f8;border:1px solid var(--line);color:var(--txt);border-radius:8px;
-  padding:7px 0;font-size:12px;font-weight:600;cursor:pointer;text-transform:capitalize}
-.permeses button.sel{background:var(--teal-d);border-color:var(--teal-d);color:#fff}
+.permeses{display:flex;flex-direction:column;gap:1px;max-height:216px;overflow-y:auto}
+.permes{display:flex;align-items:center;gap:8px;padding:4px 6px;border-radius:6px;font-size:12px;
+  color:var(--txt);cursor:pointer;text-transform:capitalize}
+.permes:hover{background:#f2f5f5}
+.permes input{width:15px;height:15px;flex:none;accent-color:var(--teal-d);cursor:pointer}
 
 /* títulos */
 h2.pg{font-size:20px;letter-spacing:-.02em;margin:4px 0 2px;display:flex;align-items:center;gap:10px}
