@@ -10,12 +10,12 @@ const seq = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
 
 /* ---------------- formatação ---------------- */
 const fmtBR = (v, d = 0) => (v ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
-function fmtM(v) {
+function fmtM(v) {  /* valores monetários sem o prefixo R$ (pedido do Fernando) */
   if (v == null) return "—";
   const a = Math.abs(v);
-  if (a >= 1e6) return "R$ " + fmtBR(v / 1e6, 1) + "M";
-  if (a >= 1e3) return "R$ " + fmtBR(v / 1e3, 0) + "K";
-  return "R$ " + fmtBR(v, 0);
+  if (a >= 1e6) return fmtBR(v / 1e6, 1) + "M";
+  if (a >= 1e3) return fmtBR(v / 1e3, 0) + "K";
+  return fmtBR(v, 0);
 }
 function fmtNum(v) {
   if (v == null) return "—";
