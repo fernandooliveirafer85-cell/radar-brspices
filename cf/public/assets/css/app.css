@@ -117,8 +117,9 @@ main{margin-left:230px;padding:26px 24px 66px;max-width:1280px}
 .f{display:flex;align-items:center;gap:7px}
 .f label{font-size:11px;color:var(--soft);letter-spacing:.06em;text-transform:uppercase;font-weight:700}
 .f select,.perbtn{background:#f6f8f8;color:var(--txt);border:1px solid var(--line);border-radius:8px;
-  padding:6px 10px;font-size:12.5px;font-weight:600;height:32px;cursor:pointer}
-.f select{min-width:96px;max-width:220px}
+  padding:5px 9px;font-size:11px;font-weight:500;height:30px;cursor:pointer}
+.f select{min-width:88px;max-width:190px}
+.f select option{font-size:11px;font-weight:400}
 .reset{background:none;border:1px solid var(--line);color:var(--mut);border-radius:8px;
   padding:0 12px;height:32px;font-size:12px;cursor:pointer;font-weight:600}
 .reset:hover{color:var(--bad);border-color:var(--bad)}
@@ -179,10 +180,12 @@ h2.pg::before{content:"";width:9px;height:9px;background:var(--teal);transform:r
 
 /* tabelas */
 .twrap{overflow-x:auto}
-table{width:100%;border-collapse:collapse;font-size:12.8px}
-th{color:var(--soft);font-size:10px;text-transform:uppercase;letter-spacing:.12em;text-align:left;
-  padding:7px 9px;border-bottom:1.5px solid var(--line);font-weight:700;white-space:nowrap}
-td{padding:9.5px 9px;border-bottom:1px solid var(--line2)}
+table{width:100%;border-collapse:collapse;font-size:11.5px}
+th{background:var(--ink);color:#fff;font-size:10px;text-transform:uppercase;letter-spacing:.1em;text-align:left;
+  padding:7px 9px;font-weight:700;white-space:nowrap}
+th:first-child{border-radius:8px 0 0 8px}
+th:last-child{border-radius:0 8px 8px 0}
+td{padding:5.5px 9px;border-bottom:1px solid var(--line2)}
 tbody tr:hover td{background:#f7fafa}
 td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}
 td b{font-weight:650}
@@ -233,10 +236,11 @@ td b{font-weight:650}
 .empty{color:var(--soft);font-size:13px;text-align:center;padding:22px}
 
 /* tabela Faturamento (drill-down UF) */
-.fat-tab{font-size:12.5px}
 .fat-tab th.ord{cursor:pointer;user-select:none}
-.fat-tab th.ord:hover{color:var(--teal-d)}
-.fat-tab th.ord-on{color:var(--teal-d)}
+.fat-tab th.ord:hover{color:var(--aqua-l)}
+.fat-tab th.ord-on{color:var(--creme)}
+.fat-tab tr.fat-total td{background:var(--ink);color:#fff;font-weight:700;border-bottom:2px solid var(--teal)}
+.fat-tab tr.fat-total .farolp{background:rgba(255,255,255,.15);color:#fff}
 .fat-tab tr.fat-cli{cursor:pointer}
 .fat-tab tr.fat-cli:hover td{background:#f0f6f6}
 .fat-tab tr.fat-cai td b{color:var(--bad)}

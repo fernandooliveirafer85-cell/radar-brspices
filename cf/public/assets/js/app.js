@@ -121,8 +121,8 @@ function rotuloPer() {
   if (!m.length) return "Selecione…";
   if (eq(seq(1, mAtual)) && S.ano === S.data.periodo.ano) return `YTD (jan–${MESES[mAtual - 1]})`;
   if (m.length === 12) return "Ano completo";
-  if (eq(seq(1, 6))) return "1º semestre";
-  if (eq(seq(7, 12))) return "2º semestre";
+  if (eq(seq(1, 6))) return "H1";
+  if (eq(seq(7, 12))) return "H2";
   for (let q = 0; q < 4; q++) if (eq(seq(q * 3 + 1, q * 3 + 3))) return "Q" + (q + 1);
   if (m.length === 1) return MESES[m[0] - 1];
   const contig = m.every((x, i) => i === 0 || x === m[i - 1] + 1);
@@ -725,6 +725,33 @@ async function exportExcel() {
       xlTabela(ws, "Top famílias (YTD escopo)", ["Família", "Faturamento"],
         (S.data.familias || []).slice(0, 10).map((f) => [f.nome, Math.round(f.fat)]), [null, XL.money], [26, 16]);
 
+    } else if (v === "fat") {
+      if (!FAT.cube) {
+        const res = await fetch("/api/fatcube", { cache: "no-store" });
+        if (!res.ok) throw new Error("detalhamento indisponível");
+        FAT.cube = await res.json();
+      }
+      const { itens, tot, totalF26 } = calcFat();
+      itens.sort((a, b) => b.m.f26 - a.m.f26);
+      const cab = ["#", "Cliente", "2025", "2026", "26 vs 25", "% Repr", "Vol 2025", "Vol 2026",
+                   "26 vs 25 cx", "Meta", "Realizado", "% Ating", "GAP", "Ano ant."];
+      const fmts = [XL.num, null, XL.money, XL.money, XL.pct, XL.pct, XL.num, XL.num,
+                    XL.pct, XL.money, XL.money, XL.pct, XL.money, XL.money];
+      const linha = (rk, nome, m, base) => [rk, nome, Math.round(m.f25), Math.round(m.f26), m.cr,
+        m.f26 / (base || 1), Math.round(m.v25), Math.round(m.v26), m.crv,
+        m.meta ? Math.round(m.meta) : null, Math.round(m.realizado), m.ating,
+        m.gap == null ? null : Math.round(m.gap), Math.round(m.anoAnt)];
+      xlTabela(ws, `Faturamento por cliente — 2025/2026/volumes travados no fechado · Meta em diante: ${rotuloPer()}`,
+        cab, [linha(null, `TOTAL GERAL (${itens.length} clientes)`, tot, totalF26),
+              ...itens.map((x, i) => linha(i + 1, x.c.cliente, x.m, totalF26))],
+        fmts, [5, 36, 14, 14, 10, 9, 11, 11, 11, 13, 13, 9, 13, 14]);
+      const ufRows = [];
+      itens.slice(0, 20).forEach((x, i) => {
+        [...x.c.ufs].map((u) => ({ u, m: metricasUF(u) })).sort((a, b) => b.m.f26 - a.m.f26)
+          .forEach((y) => ufRows.push(linha(i + 1, `${x.c.cliente} — ${y.u.uf}`, y.m, x.m.f26)));
+      });
+      xlTabela(ws, "Abertura por UF (Top 20) — % Repr relativo ao cliente", cab, ufRows, fmts);
+
     } else if (v === "metas") {
       const nivel = (S.data.escopo.perfil === "gestor" && !S.fGer && !S.fVend) ? "ger"
         : (S.data.escopo.perfil !== "vendedor" && !S.fVend) ? "vend" : "cliente";
@@ -847,8 +874,12 @@ function metricasCliente(c) {
 function metricasUF(u) {
   const f25 = somaFechado(u.m25), f26 = somaFechado(u.m26);
   const v25 = somaFechado(u.q25), v26 = somaFechado(u.q26);
+  const meses = mesesSel();
+  const realizado = somaMeses(u.m26, meses), anoAnt = somaMeses(u.m25, meses);
+  const meta = somaMeses(u.meta || [], meses);
   return { f25, f26, cr: f25 > 0 ? (f26 - f25) / f25 : null,
-           v25, v26, crv: v25 > 0 ? (v26 - v25) / v25 : null };
+           v25, v26, crv: v25 > 0 ? (v26 - v25) / v25 : null,
+           realizado, anoAnt, meta, ating: meta ? realizado / meta : null, gap: meta ? realizado - meta : null };
 }
 
 const farol = (x) => x == null ? "" : x >= 0.12 ? "cor-ok" : x >= 0 ? "cor-med" : "cor-bad";
@@ -878,21 +909,35 @@ function agregarPorBandeira(linhas) {
     c.meta.forEach((v, i) => g.meta[i] += v || 0);
     for (const u of c.ufs) {
       const t = (g.ufs[u.uf] ??= { uf: u.uf, m25: Array(12).fill(0), m26: Array(12).fill(0),
-                                    q25: Array(12).fill(0), q26: Array(12).fill(0) });
-      for (const k of ["m25", "m26", "q25", "q26"]) u[k].forEach((v, i) => t[k][i] += v || 0);
+                                    q25: Array(12).fill(0), q26: Array(12).fill(0), meta: Array(12).fill(0) });
+      for (const k of ["m25", "m26", "q25", "q26", "meta"]) (u[k] || []).forEach((v, i) => t[k][i] += v || 0);
     }
   }
   return Object.values(map).map((g) => ({ cliente: g.cliente, meta: g.meta, ufs: Object.values(g.ufs) }));
 }
 
-function desenharFat() {
-  // filtra pelos filtros de gerente/vendedor e agrega por BANDEIRA (todas as fatias somadas)
+/* filtra por gerente/vendedor, agrega por bandeira e calcula métricas + TOTAL do escopo */
+function calcFat() {
   let linhas = FAT.cube.clientes;
   if (S.fGer) linhas = linhas.filter((c) => c.ger === S.fGer);
   if (S.fVend) linhas = linhas.filter((c) => c.vend === S.fVend);
   linhas = agregarPorBandeira(linhas);
-  let itens = linhas.map((c) => ({ c, m: metricasCliente(c) }));
+  const itens = linhas.map((c) => ({ c, m: metricasCliente(c) }));
   const totalF26 = itens.reduce((s, x) => s + x.m.f26, 0) || 1;
+
+  // TOTAL GERAL (todos os clientes do escopo, não só o top 20)
+  const tot = { f25: 0, f26: 0, v25: 0, v26: 0, realizado: 0, anoAnt: 0, meta: 0 };
+  for (const x of itens) for (const k of Object.keys(tot)) tot[k] += x.m[k] || 0;
+  tot.cr = tot.f25 > 0 ? (tot.f26 - tot.f25) / tot.f25 : null;
+  tot.crv = tot.v25 > 0 ? (tot.v26 - tot.v25) / tot.v25 : null;
+  tot.ating = tot.meta ? tot.realizado / tot.meta : null;
+  tot.gap = tot.meta ? tot.realizado - tot.meta : null;
+  return { itens, tot, totalF26 };
+}
+
+function desenharFat() {
+  let { itens, tot, totalF26 } = calcFat();
+  const nCli = itens.length;
 
   // ordena e pega Top 20
   const col = FAT.ordCol, dir = FAT.ordDir;
@@ -908,7 +953,9 @@ function desenharFat() {
     return `<th class="${["f25", "f26", "cr", "repr", "v25", "v26", "crv", "meta", "realizado", "ating", "gap", "anoAnt"].includes(c.k) ? "r" : ""}${c.sort ? " ord" : ""}${ativo ? " ord-on" : ""}"${c.sort ? ` data-sort="${c.sort}"` : ""}>${c.t}${seta}</th>`;
   }).join("");
 
-  let corpo = "";
+  let corpo = nCli === 0 ? "" : `<tr class="fat-total"><td class="r">Σ</td>
+    <td><b>TOTAL GERAL</b> <span style="opacity:.75;font-weight:400">· ${nCli} clientes</span></td>
+    ${celFat(tot, totalF26)}</tr>`;
   itens.forEach((x, i) => {
     const { c, m } = x;
     const cai = m.f26 < m.f25;                 // caindo vs ano anterior → vermelho
@@ -955,7 +1002,6 @@ function celFat(m, base, uf) {
     `<td class="r">${fmtBR(m.v26, 0)}</td>`,
     `<td class="r"><span class="farolp ${farol(m.crv)}">${pct(m.crv)}</span></td>`,
   ];
-  if (uf) return cols.join("") + '<td></td><td></td><td></td><td></td><td></td>';
   return cols.join("") +
     `<td class="r">${m.meta ? fmtV(m.meta) : "—"}</td>` +
     `<td class="r">${fmtV(m.realizado)}</td>` +

@@ -205,7 +205,8 @@ def main():
             .sub(dev.groupby(["CNPJ_N", "ANO", "MES"])["QUANTIDADE"].sum(), fill_value=0.0))
 
     uf_de = lambda cnpj: (dim.get(cnpj, (None, None, None, ""))[3] or "—")
-    novo_ud = lambda: {"m25": [0.0] * 12, "m26": [0.0] * 12, "q25": [0.0] * 12, "q26": [0.0] * 12}
+    novo_ud = lambda: {"m25": [0.0] * 12, "m26": [0.0] * 12,
+                       "q25": [0.0] * 12, "q26": [0.0] * 12, "meta": [0.0] * 12}
 
     groups = {}
 
@@ -237,8 +238,10 @@ def main():
             g["uf_det"].setdefault(uf_de(cnpj), novo_ud())[f"q{a % 100}"][m - 1] += float(v)
     for _, r in metas.iterrows():
         g = grupo(r["CNPJ_N"])
+        ud = g["uf_det"].setdefault(uf_de(r["CNPJ_N"]), novo_ud())
         for i, c in enumerate(COLS_MES_META):
             g["meta"][i] += float(r[c])
+            ud["meta"][i] += float(r[c])
     for cnpj, ts in fat.groupby("CNPJ_N")["EMISSAO"].max().items():
         g = grupo(cnpj)
         if g["ult"] is None or ts > g["ult"]:
@@ -272,7 +275,8 @@ def main():
         # cubo de faturamento por UF (servido sob demanda p/ a página Faturamento)
         ufs_det = [{"uf": u,
                     "m25": [round(x) for x in d["m25"]], "m26": [round(x) for x in d["m26"]],
-                    "q25": [round(x) for x in d["q25"]], "q26": [round(x) for x in d["q26"]]}
+                    "q25": [round(x) for x in d["q25"]], "q26": [round(x) for x in d["q26"]],
+                    "meta": [round(x) for x in d["meta"]]}
                    for u, d in sorted(g["uf_det"].items(), key=lambda kv: -sum(kv[1]["m26"]))]
         fatrec = {"cliente": g["cliente"], "vend": g["vend"], "ger": g["ger"],
                   "meta": [round(v) for v in g["meta"]], "ufs": ufs_det}
