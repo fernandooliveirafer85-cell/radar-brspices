@@ -3,15 +3,15 @@
 *.xlsm
 *.csv
 
-# JSONs abertos (só os .enc.json criptografados são permitidos em /data)
-data/*.json
-!data/*.enc.json
+# Dados NUNCA entram no repo (a partir da migração Cloudflare, vivem só no cofre KV)
+data/
 data-src/
 
 # Senhas e segredos locais NUNCA entram no repo
 *.local.json
 *.local.txt
 tools/senhas*
+.wrangler/
 cf/.wrangler/
 
 # Diversos
@@ -20,3 +20,6 @@ node_modules/
 Thumbs.db
 .DS_Store
 ~$*
+
+# Notas pessoais do Fernando (nunca commitar)
+Pr*ximas etapas.txt

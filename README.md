@@ -1,41 +1,52 @@
 # Book de Vendas BR Spices — Painel Comercial Web
 
-Dashboard comercial em HTML/JS para gestão, gerentes e vendedores, com acesso controlado por perfil.
+Dashboard comercial para gestão, gerentes e vendedores, com acesso por e-mail e dados privados.
 
-## Como funciona
-```
-BASE PROTHEUS (xlsx) → tools/export_radar.py → JSONs criptografados por perfil → git push → site atualiza
-```
+- **Painel (produção):** https://bookdevendasbrspices.pages.dev (Cloudflare Pages)
+- **Gestão de acessos:** ver [MANUAL-ADMINISTRATIVO.md](MANUAL-ADMINISTRATIVO.md)
 
-## Login
-A senha digitada gera um hash (SHA-256) que localiza o arquivo do perfil em `data/`,
-e a mesma senha deriva a chave (PBKDF2 310k + AES-GCM) que descriptografa os dados
-**no navegador** (WebCrypto). Nenhuma senha ou dado aberto trafega ou fica em servidor.
-Senhas: `tools/senhas.local.txt` (somente local, nunca commitado).
+> Este repositório (`bookdevendasbrspices.github.io`) foi **aposentado** — serve apenas um
+> redirecionamento para o novo endereço. O código de produção está na pasta [`cf/`](cf/).
 
-## Atualizar os dados
+## Arquitetura (Rota B — Cloudflare)
 ```
-%LOCALAPPDATA%\Programs\Python\Python312\python.exe tools\export_radar.py
-git add data/ && git commit -m "dados" && git push
+BASE PROTHEUS (xlsx) → tools/export_radar.py → tools/kv_bulk.local.json
+   → wrangler kv bulk put --remote → cofre KV (privado)
+Usuário → Cloudflare Access (login por e-mail / código) → cf/functions/api/dados.js
+   → entrega só o escopo do e-mail autenticado (mapa em KV "usuarios")
 ```
+- **Sem senha:** login por código de 6 dígitos no e-mail (Cloudflare Access).
+- **Dados privados:** vivem no KV da Cloudflare, nunca no repositório público.
+- **Perfis:** visão completa (diretoria) · gerente (sua equipe) · vendedor (sua carteira).
+- **Gestão de usuários:** página `/admin.html` (restrita a administradores).
 
-- **Perfis:** gestor (tudo) · gerente (sua equipe) · vendedor (sua carteira)
-- **Proteção v1:** dados criptografados no navegador com senha por pessoa (AES). Nenhum dado aberto é commitado.
-- **Backlog:** migrar autenticação para Cloudflare Pages + Access.
+## Atualizar os dados (enquanto a automação não entra)
+```powershell
+$py = "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe"
+& $py tools\export_radar.py            # gera tools/kv_bulk.local.json (dados) + senhas locais
+cd cf
+wrangler kv bulk put ..\tools\kv_bulk.local.json --namespace-id <ID_DO_KV> --remote
+```
+> `--remote` é obrigatório (sem ele o wrangler grava num simulador local e o site vê dados vazios).
 
 ## Estrutura
 ```
-index.html          página principal (SPA)
-assets/css, js      estilos e lógica
-data/               SOMENTE JSONs criptografados (nunca dados abertos)
-tools/              scripts de exportação/publicação (não publicados no site)
+index.html                redirecionamento para o novo endereço
+MANUAL-ADMINISTRATIVO.md   guia do setor administrativo
+tools/export_radar.py      ETL: BASE PROTHEUS → dados agregados
+cf/                        CÓDIGO DE PRODUÇÃO (Cloudflare Pages)
+  public/                  index.html (painel), admin.html, assets
+  functions/api/           dados.js, usuarios.js, escopos.js, _lib.js
+  wrangler.jsonc           config do projeto (binding do KV)
 ```
 
-## Regra de ouro
-**Nunca** commitar dados abertos (CNPJ, faturamento). O `.gitignore` bloqueia `*.xlsx` e `data/*.json` não criptografados.
+## Páginas
+1. Overview (KPIs, evolução 12 meses, semáforo, filtros de período)
+2. Metas vs Realizado (gerente → vendedor → cliente, gaps)
+3. Positivados (semáforo de recência, valor em risco)
+4. Rankings (gerentes, vendedores, clientes, famílias)
++ exportação PDF/Excel por visão.
 
-## Páginas v1
-1. Visão Geral (KPIs mês/YTD)
-2. Metas vs Realizado
-3. Positivados (semáforo de recência)
-4. Rankings (vendedores/clientes)
+## Backlog
+- Automação: rodar o ETL na nuvem sem PC ligado (upload da planilha → GitHub Actions/Worker → KV).
+- Páginas Clientes, Carteira/Pedidos, Anotações.
