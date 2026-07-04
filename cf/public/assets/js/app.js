@@ -2,7 +2,7 @@
    Login: senha → SHA-256 → data/<hash>.enc.json → PBKDF2 + AES-GCM (WebCrypto). */
 "use strict";
 
-const S = { data: null, fGer: "", fVend: "", ano: 2026, meses: [],
+const S = { data: null, fGer: "", fVend: "", fCanal: "", fCat: "", ano: 2026, meses: [],
             nPos: 100, nCli: 50, fStatus: "", busca: "", buscaMeta: "", fracMes: 1,
             numModo: localStorage.getItem("bv_num") || "detalhado" };
 const $ = (id) => document.getElementById(id);
@@ -247,7 +247,7 @@ function periodoRapido(q) {
 }
 
 function limparFiltros() {
-  S.fGer = ""; S.fVend = "";               // zera o ESTADO, não só os campos na tela
+  S.fGer = ""; S.fVend = ""; S.fCanal = ""; S.fCat = "";   // zera o ESTADO, não só a tela
   if ($("f-ger")) $("f-ger").value = "";
   if ($("f-vend")) $("f-vend").value = "";
   $("f-ano").value = "2026";
@@ -265,25 +265,51 @@ function linhas() {
   let r = S.data.clientes;
   if (S.fGer) r = r.filter((p) => p.ger === S.fGer);
   if (S.fVend) r = r.filter((p) => p.vend === S.fVend);
+  if (S.fCanal) r = r.filter((p) => (p.canal || "SEM CANAL") === S.fCanal);
   return r;
 }
-const filtrado = () => !!(S.fGer || S.fVend);
+const filtrado = () => !!(S.fGer || S.fVend || S.fCanal || S.fCat);
+
+/* pseudo-linhas a partir do cubo MIX quando há filtro de CATEGORIA
+   (o cubo principal não abre por categoria; meta/recência não existem nesse recorte) */
+const Z12 = () => Array(12).fill(0);
+function canalLookup() {
+  if (S._canalMap) return S._canalMap;
+  const m = {};
+  for (const p of S.data.clientes) m[p.cliente + "|" + p.vend] = p.canal || "SEM CANAL";
+  return (S._canalMap = m);
+}
+function linhasMix() {
+  const cm = canalLookup();
+  let r = MIX.cube.cats.filter((c) => c.cat === S.fCat);
+  if (S.fGer) r = r.filter((c) => c.ger === S.fGer);
+  if (S.fVend) r = r.filter((c) => c.vend === S.fVend);
+  if (S.fCanal) r = r.filter((c) => (cm[c.cliente + "|" + c.vend] || "SEM CANAL") === S.fCanal);
+  return r.map((c) => ({ cliente: c.cliente, vend: c.vend, ger: c.ger,
+    canal: cm[c.cliente + "|" + c.vend] || "SEM CANAL",
+    m24: Z12(), m25: c.m25, m26: c.m26, q26: c.q26, meta: Z12(),
+    status: "", ult: null, perdido: 0, media: 0, meses_sem: 99 }));
+}
 
 /* ---------------- render ---------------- */
 function renderAll() {
   const rows = linhas(), meses = mesesSel();
   renderChips();
-  renderKpis(rows, meses);
-  renderEvolucao(rows);
+  // com filtro de CATEGORIA os números vêm do cubo MIX (pseudo-linhas)
+  const rowsK = (S.fCat && MIX.cube) ? linhasMix() : rows;
+  renderKpis(rowsK, meses);
+  renderEvolucao(rowsK);
   renderDashRank();
   renderSemaforo(rows);
   renderFamilias();
+  renderParados(rows);
+  renderAnalitica();
   renderMetas(rows, meses);
   renderPositivados(rows);
   if (FAT.cube && $("v-fat").classList.contains("on")) desenharFat();
 }
 
-/* cross-filter: clicar num gerente/vendedor filtra a página toda; clicar de novo desfaz */
+/* cross-filter: clicar filtra a página toda; clicar de novo desfaz */
 function filtrarGer(g) {
   S.fGer = S.fGer === g ? "" : g;
   if ($("f-ger")) $("f-ger").value = S.fGer;
@@ -297,12 +323,24 @@ function filtrarVend(v) {
   S.nPos = 100; S.nCli = 50;
   renderAll();
 }
+function filtrarCanal(c) {
+  S.fCanal = S.fCanal === c ? "" : c;
+  S.nPos = 100; S.nCli = 50;
+  renderAll();
+}
+function filtrarCat(c) {
+  S.fCat = S.fCat === c ? "" : c;
+  S.nPos = 100; S.nCli = 50;
+  renderAll();
+}
 
 function renderChips() {
   $("per-btn").textContent = rotuloPer();
   const f = [S.ano + " · " + rotuloPer()];
   if (S.fGer) f.push("Gerente: " + S.fGer);
   if (S.fVend) f.push("Vendedor: " + nomeVend(S.fVend));
+  if (S.fCanal) f.push("Canal: " + S.fCanal);
+  if (S.fCat) f.push("Categoria: " + S.fCat);
   $("chip-filtro").textContent = f.join(" · ");
   $("chip-filtro").style.display = "";
 }
@@ -361,8 +399,9 @@ function renderKpis(rows, meses) {
     kpiCard(IC.dev, "#C96643", `Devolução<br>${d.periodo.ano} YTD`, filtrado() ? "—" : fmtM(k.devolucao),
       filtrado() ? escT : "já abatida do líquido") +
     kpiCard(IC.pos, "#8AAB83", `Positivados<br>${noMes ? "no mês" : "no período"}`,
-      `${fmtBR(positivados)}<small>/${fmtBR(base)}</small>`,
-      base ? `<b>${fmtPct(positivados / base)}</b> da base` : "", "posit");
+      S.fCat ? "—" : `${fmtBR(positivados)}<small>/${fmtBR(base)}</small>`,
+      S.fCat ? '<span style="opacity:.75">sem recorte por categoria</span>'
+             : (base ? `<b>${fmtPct(positivados / base)}</b> da base` : ""), "posit");
 
   document.querySelectorAll("#kpis .kpi.klick").forEach((el) =>
     el.addEventListener("click", () => trocarView(el.dataset.nav)));
@@ -469,6 +508,56 @@ function renderSemaforo(rows) {
 function renderFamilias() {
   $("familias-mini").innerHTML = (S.data.familias || []).slice(0, 8).map((f, i) =>
     `<li><span class="n">${i + 1}</span><span class="nm">${esc(f.nome)}</span><span class="vl">${fmtM(f.fat)}</span></li>`).join("");
+}
+
+/* ---------- Parados (Acionar agora / Validar) — mesma régua do semáforo ---------- */
+function renderParados(rows) {
+  const bloco = (elTab, elTot, st) => {
+    const r = rows.filter((p) => p.status === st && p.meses_sem < 99 && (p.media || 0) > 0)
+                  .sort((a, b) => (b.perdido || 0) - (a.perdido || 0)).slice(0, 12);
+    const tot = r.reduce((s, p) => s + (p.perdido || 0), 0);
+    $(elTab).innerHTML = r.length ? `<table class="fat-tab"><thead><tr>
+        <th>CLIENTE</th><th>Canal</th><th>Vendedor</th><th>Últ. Compra</th>
+        <th class="r">R$/mês</th><th class="r">Total perdido</th></tr></thead><tbody>` +
+      r.map((p) => `<tr><td><b>${esc(p.cliente)}</b></td>
+        <td style="color:var(--mut);font-size:10.5px">${esc(p.canal || "")}</td>
+        <td style="color:var(--mut);font-size:10.5px">${esc(nomeVend(p.vend))}</td>
+        <td>${fmtDataCurta(p.ult)}</td>
+        <td class="r" style="color:var(--bad);font-weight:700">${fmtV(p.media)}</td>
+        <td class="r"><b>${fmtV(p.perdido)}</b></td></tr>`).join("") + "</tbody></table>"
+      : '<div class="empty">Nenhum cliente nesta faixa. 🎉</div>';
+    $(elTot).textContent = tot > 0 ? `${fmtM(tot)} em risco` : "";
+  };
+  bloco("dash-acionar", "acionar-tot", "acionar");
+  bloco("dash-validar", "validar-tot", "validar");
+}
+
+/* ---------- Oportunidades nas contas-chave (whitespace, calculado no ETL) ---------- */
+function renderAnalitica() {
+  const card = $("card-analitica");
+  if (!card) return;
+  const a = S.data.analitica;
+  if (!a || !(a.whitespace || []).length) { card.style.display = "none"; return; }
+  card.style.display = "";
+  $("analitica-janela").textContent =
+    `top 30 clientes · ${a.janela} · potencial bruto ${fmtM(a.pot_total)}`;
+  $("dash-ws").innerHTML =
+    `<div class="twrap"><table class="fat-tab"><thead><tr>
+      <th class="r">#</th><th>FAMÍLIA CAMPEÃ</th><th>Categoria</th>
+      <th class="r">Compram</th><th class="r">Contas s/</th><th class="r">Giro/conta</th>
+      <th class="r">Potencial</th><th>Contas-alvo (não compram a família)</th></tr></thead><tbody>` +
+    a.whitespace.slice(0, 10).map((w, i) =>
+      `<tr><td class="r"><b>${i + 1}</b></td><td><b>${esc(w.fam)}</b></td>
+       <td style="color:var(--mut);font-size:10.5px">${esc(w.cat)}</td>
+       <td class="r">${w.compradores}</td><td class="r">${w.contas_sem}</td>
+       <td class="r">${fmtV(w.giro)}</td>
+       <td class="r"><b style="color:var(--ok)">${fmtV(w.potencial)}</b></td>
+       <td style="font-size:10.5px;color:var(--mut)">${w.alvo.map(esc).join(" · ")}</td></tr>`).join("") +
+    `</tbody></table></div>
+     <div class="note">🎯 <b>Contas-alvo</b> (mais famílias campeãs em aberto):
+       ${a.contas_alvo.map((c) => `<b>${esc(c.cliente)}</b> (${c.abertas})`).join(" · ")}.<br>
+       ${esc(a.criterio)}. Whitespace real: a conta não comprou <b>nenhuma gramatura</b> da família na janela.
+       Análise global do top 30 — não segue os filtros da página.</div>`;
 }
 
 /* ---------- Metas ---------- */
@@ -582,7 +671,10 @@ function liRank(i, nome, sub, valor) {
   return `<li><span class="n">${i + 1}</span><span class="nm">${esc(nome)}${sub ? `<span class="sb">${esc(sub)}</span>` : ""}</span><span class="vl">${valor}</span></li>`;
 }
 
-const DASH = { cli: { col: "f26", dir: -1 }, ger: { col: "f26", dir: -1 }, vend: { col: "f26", dir: -1 } };
+const DASH = { cli: { col: "f26", dir: -1 }, ger: { col: "f26", dir: -1 }, vend: { col: "f26", dir: -1 },
+               canal: { col: "f26", dir: -1 }, cat: { col: "f26", dir: -1 }, prod: { col: "f26", dir: -1 },
+               reg: { col: "f26", dir: -1 }, uf: { col: "f26", dir: -1 } };
+const MIX = { cube: null, carregando: false };
 
 function metDash(f25, f26, meta) {
   return { f25, f26, cr: f25 > 0 ? (f26 - f25) / f25 : (f26 > 0 ? 1 : null),
@@ -680,6 +772,119 @@ function renderDashRank() {
     tabelaDash("dash-vend", "vend", [...colsDash("VENDEDOR", totV), ...extra], vend, 20, filtrarVend, S.fVend);
     $("card-dash-vend").style.display = "";
   } else $("card-dash-vend").style.display = "none";
+
+  // Canais → clique filtra a página (usa o recorte atual, incl. categoria)
+  const rowsC = (S.fCat && MIX.cube) ? linhasMix() : rows;
+  const can = agrupar(rowsC, "canal", meses).map(mapear);
+  const totC = can.reduce((s, x) => s + x.f26, 0);
+  tabelaDash("dash-canal", "canal", [...colsDash("CANAL", totC), ...extra], can, 15, filtrarCanal, S.fCanal);
+
+  // Categorias e Produtos (cubo MIX, lazy) → clique na categoria filtra a página
+  if (!MIX.cube) { carregarMix(); } else {
+    const meses2 = meses;
+    const colVol = { k: "v26", t: "Vol 2026 cx", r: 1, v: (x) => x.v26, f: (x) => fmtBR(x.v26, 0) };
+    const cats = dashCategorias(meses2);
+    const totCat = cats.reduce((s, x) => s + x.f26, 0);
+    const colsCat = colsDash("CATEGORIA", totCat).filter((c) => !["meta", "ating", "gap"].includes(c.k));
+    tabelaDash("dash-cat", "cat", [...colsCat, colVol], cats, 30, filtrarCat, S.fCat);
+
+    const prods = dashProdutos(meses2);
+    const totP = prods.reduce((s, x) => s + x.f26, 0);
+    const colsProd = colsDash("PRODUTO", totP).filter((c) => !["meta", "ating", "gap"].includes(c.k));
+    colsProd.splice(1, 0,
+      { k: "cat", t: "Categoria", v: (x) => x.cat, f: (x) => `<span style="color:var(--mut);font-size:10.5px">${esc(x.cat)}</span>` },
+      { k: "curva", t: "ABC", v: (x) => x.curva || "—", f: (x) => x.curva ? `<span class="curva c-${esc(x.curva)}">${esc(x.curva)}</span>` : "—" });
+    tabelaDash("dash-prod", "prod", [...colsProd, colVol], prods, 20, null);
+  }
+
+  // Regiões do Brasil e UFs (cubo de UF do Faturamento, lazy)
+  if (!FAT.cube) { carregarFatCube(); } else {
+    const colCli = { k: "cli", t: "Clientes", r: 1, v: (x) => x.clientes, f: (x) => fmtBR(x.clientes) };
+    const regs = dashRegioes(meses, true);
+    const totR = regs.reduce((s, x) => s + x.f26, 0);
+    tabelaDash("dash-reg", "reg", [...colsDash("REGIÃO", totR), colCli], regs, 10, null);
+    const ufs = dashRegioes(meses, false);
+    const totU = ufs.reduce((s, x) => s + x.f26, 0);
+    tabelaDash("dash-uf", "uf", [...colsDash("UF", totU), colCli], ufs, 30, null);
+  }
+}
+
+/* carregamentos lazy dos cubos (uma vez; re-renderiza ao chegar) */
+function carregarMix() {
+  if (MIX.carregando) return;
+  MIX.carregando = true;
+  $("dash-cat").innerHTML = '<div class="empty">Carregando categorias…</div>';
+  fetch("/api/mixcube", { cache: "no-store" }).then((r) => r.ok ? r.json() : null)
+    .then((j) => { MIX.cube = j; if (j) renderAll(); })
+    .catch(() => { $("dash-cat").innerHTML = '<div class="empty">Indisponível.</div>'; });
+}
+function carregarFatCube() {
+  if (FAT.carregando) return;
+  FAT.carregando = true;
+  fetch("/api/fatcube", { cache: "no-store" }).then((r) => r.ok ? r.json() : null)
+    .then((j) => { FAT.cube = j; if (j) renderDashRank(); })
+    .catch(() => {});
+}
+
+/* Categorias: agrega o cubo MIX respeitando gerente/vendedor/canal */
+function dashCategorias(meses) {
+  const cm = canalLookup();
+  let r = MIX.cube.cats;
+  if (S.fGer) r = r.filter((c) => c.ger === S.fGer);
+  if (S.fVend) r = r.filter((c) => c.vend === S.fVend);
+  if (S.fCanal) r = r.filter((c) => (cm[c.cliente + "|" + c.vend] || "SEM CANAL") === S.fCanal);
+  const map = {};
+  for (const c of r) {
+    const g = (map[c.cat] ??= { nome: c.cat, f25: 0, f26: 0, v26: 0 });
+    g.f26 += somaMeses(c.m26, meses);
+    g.f25 += somaMesesPr(c.m25, meses);
+    g.v26 += somaMeses(c.q26, meses);
+  }
+  return Object.values(map).filter((g) => g.f25 || g.f26)
+    .map((g) => ({ ...g, ...metDash(g.f25, g.f26, 0) }));
+}
+/* Produtos: cubo MIX produto×vendedor (canal não recorta produtos) */
+function dashProdutos(meses) {
+  let r = MIX.cube.prods;
+  if (S.fGer) r = r.filter((p) => p.ger === S.fGer);
+  if (S.fVend) r = r.filter((p) => p.vend === S.fVend);
+  if (S.fCat) r = r.filter((p) => p.cat === S.fCat);
+  const map = {};
+  for (const p of r) {
+    const g = (map[p.prod] ??= { nome: p.prod, cat: p.cat, curva: p.curva, f25: 0, f26: 0, v26: 0 });
+    g.f26 += somaMeses(p.m26, meses);
+    g.f25 += somaMesesPr(p.m25, meses);
+    g.v26 += somaMeses(p.q26, meses);
+    if (!g.curva && p.curva) g.curva = p.curva;
+  }
+  return Object.values(map).filter((g) => g.f25 || g.f26)
+    .map((g) => ({ ...g, ...metDash(g.f25, g.f26, 0) }));
+}
+/* Regiões/UFs: cubo de UF do Faturamento respeitando gerente/vendedor/canal */
+const REGIAO_UF = { SP: "SUDESTE", RJ: "SUDESTE", MG: "SUDESTE", ES: "SUDESTE",
+  PR: "SUL", SC: "SUL", RS: "SUL",
+  BA: "NORDESTE", SE: "NORDESTE", AL: "NORDESTE", PE: "NORDESTE", PB: "NORDESTE",
+  RN: "NORDESTE", CE: "NORDESTE", PI: "NORDESTE", MA: "NORDESTE",
+  PA: "NORTE", AM: "NORTE", RO: "NORTE", RR: "NORTE", AP: "NORTE", AC: "NORTE", TO: "NORTE",
+  MT: "CENTRO-OESTE", MS: "CENTRO-OESTE", GO: "CENTRO-OESTE", DF: "CENTRO-OESTE" };
+function dashRegioes(meses, porRegiao) {
+  const cm = canalLookup();
+  let r = FAT.cube.clientes;
+  if (S.fGer) r = r.filter((c) => c.ger === S.fGer);
+  if (S.fVend) r = r.filter((c) => c.vend === S.fVend);
+  if (S.fCanal) r = r.filter((c) => (cm[c.cliente + "|" + c.vend] || "SEM CANAL") === S.fCanal);
+  const map = {};
+  for (const c of r) for (const u of c.ufs) {
+    const chave = porRegiao ? (REGIAO_UF[u.uf] || "—") : u.uf;
+    const g = (map[chave] ??= { nome: chave, f25: 0, f26: 0, meta: 0, _cli: new Set() });
+    const f26 = somaMeses(u.m26, meses);
+    g.f26 += f26;
+    g.f25 += somaMesesPr(u.m25, meses);
+    g.meta += somaMesesPr(u.meta || [], meses);
+    if (f26 > 0) g._cli.add(c.cliente);
+  }
+  return Object.values(map).filter((g) => g.f25 || g.f26)
+    .map((g) => ({ ...g, clientes: g._cli.size, ...metDash(g.f25, g.f26, g.meta) }));
 }
 
 /* ---------------- exportação PDF / Excel ---------------- */
@@ -691,6 +896,8 @@ function contextoTxt() {
   const f = [];
   if (S.fGer) f.push("Gerente: " + S.fGer);
   if (S.fVend) f.push("Vendedor: " + nomeVend(S.fVend));
+  if (S.fCanal) f.push("Canal: " + S.fCanal);
+  if (S.fCat) f.push("Categoria: " + S.fCat);
   return `${S.ano} · ${rotuloPer()}${f.length ? " · " + f.join(" · ") : ""} · dados até ${fmtData(S.data.atualizado_ate)}`;
 }
 const arquivoNome = (ext) =>
