@@ -12,6 +12,7 @@ data-src/
 *.local.json
 *.local.txt
 tools/senhas*
+cf/.wrangler/
 
 # Diversos
 node_modules/

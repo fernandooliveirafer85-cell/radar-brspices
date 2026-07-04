@@ -5,7 +5,7 @@
   "pages_build_output_dir": "public",
   "kv_namespaces": [
     { "binding": "BOOK_DATA", "id": "32e8fb60c57643e085f2886952398654" }
-  ],
-  // DEBUG_EMAIL=1 permite simular o e-mail via cabeçalho x-debug-email (REMOVER no corte final)
-  "vars": { "DEBUG_EMAIL": "nsznnpmv6vj7yhzc6k344kuzgs3j6fhtfb8yj34y" }
+  ]
+  // O modo de teste usa o SEGREDO DEBUG_EMAIL definido via `wrangler pages secret put`
+  // (nunca no código). Remover o segredo no corte final.
 }
