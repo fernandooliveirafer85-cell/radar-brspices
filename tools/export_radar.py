@@ -197,13 +197,15 @@ def main():
         r = nomes_fat.loc[cnpj]
         dim[cnpj] = (str(r["NOME CLIENTE"]), "SEM CADASTRO", "SEM CADASTRO", str(r["ESTADO"]))
 
-    # ---- séries mensais líquidas por CNPJ e agregação por grupo (bandeira|vendedor)
+    # ---- séries mensais líquidas (valor) e de caixas por CNPJ; agregação por grupo (bandeira|vendedor)
     fmes = fat.groupby(["CNPJ_N", "ANO", "MES"])["TOTAL"].sum()
     dmes = dev.groupby(["CNPJ_N", "ANO", "MES"])["TOTAL"].sum()
     liq = fmes.sub(dmes, fill_value=0.0)
-    f26, d26 = fat[fat["ANO"] == 2026], dev[dev["ANO"] == 2026]
-    qmes = (f26.groupby(["CNPJ_N", "MES"])["QUANTIDADE"].sum()
-            .sub(d26.groupby(["CNPJ_N", "MES"])["QUANTIDADE"].sum(), fill_value=0.0))
+    qmes = (fat.groupby(["CNPJ_N", "ANO", "MES"])["QUANTIDADE"].sum()
+            .sub(dev.groupby(["CNPJ_N", "ANO", "MES"])["QUANTIDADE"].sum(), fill_value=0.0))
+
+    uf_de = lambda cnpj: (dim.get(cnpj, (None, None, None, ""))[3] or "—")
+    novo_ud = lambda: {"m25": [0.0] * 12, "m26": [0.0] * 12, "q25": [0.0] * 12, "q26": [0.0] * 12}
 
     groups = {}
 
@@ -216,16 +218,23 @@ def main():
             g = groups[k] = {"cliente": band, "vend": vend, "ger": ger,
                              "ufs": set(), "cnpjs": set(), "ult": None,
                              "m24": [0.0] * 12, "m25": [0.0] * 12, "m26": [0.0] * 12,
-                             "q26": [0.0] * 12, "meta": [0.0] * 12}
+                             "q26": [0.0] * 12, "meta": [0.0] * 12, "uf_det": {}}
         if uf:
             g["ufs"].add(uf)
         g["cnpjs"].add(cnpj)
         return g
 
     for (cnpj, ano, mes), v in liq.items():
-        grupo(cnpj)[f"m{int(ano) % 100}"][int(mes) - 1] += float(v)
-    for (cnpj, mes), v in qmes.items():
-        grupo(cnpj)["q26"][int(mes) - 1] += float(v)
+        g = grupo(cnpj); a, m = int(ano), int(mes)
+        g[f"m{a % 100}"][m - 1] += float(v)
+        if a in (2025, 2026):
+            g["uf_det"].setdefault(uf_de(cnpj), novo_ud())[f"m{a % 100}"][m - 1] += float(v)
+    for (cnpj, ano, mes), v in qmes.items():
+        g = grupo(cnpj); a, m = int(ano), int(mes)
+        if a == 2026:
+            g["q26"][m - 1] += float(v)
+        if a in (2025, 2026):
+            g["uf_det"].setdefault(uf_de(cnpj), novo_ud())[f"q{a % 100}"][m - 1] += float(v)
     for _, r in metas.iterrows():
         g = grupo(r["CNPJ_N"])
         for i, c in enumerate(COLS_MES_META):
@@ -260,7 +269,14 @@ def main():
             "m26": [round(v) for v in g["m26"]], "q26": [round(v, 1) for v in g["q26"]],
             "meta": [round(v) for v in g["meta"]],
         }
-        clientes.append((rec, g["cnpjs"]))
+        # cubo de faturamento por UF (servido sob demanda p/ a página Faturamento)
+        ufs_det = [{"uf": u,
+                    "m25": [round(x) for x in d["m25"]], "m26": [round(x) for x in d["m26"]],
+                    "q25": [round(x) for x in d["q25"]], "q26": [round(x) for x in d["q26"]]}
+                   for u, d in sorted(g["uf_det"].items(), key=lambda kv: -sum(kv[1]["m26"]))]
+        fatrec = {"cliente": g["cliente"], "vend": g["vend"], "ger": g["ger"],
+                  "meta": [round(v) for v in g["meta"]], "ufs": ufs_det}
+        clientes.append((rec, g["cnpjs"], fatrec))
     clientes.sort(key=lambda t: -sum(t[0]["m26"]))
     print(f"Clientes-bandeira: {len(clientes)} (de {len(dim)} CNPJs)")
 
@@ -287,6 +303,7 @@ def main():
     os.makedirs(DATA_DIR, exist_ok=True)
     arquivos_gerados = set()
     kv_entries = {}          # chave de escopo -> payload aberto (p/ o cofre KV da Cloudflare)
+    fat_entries = {}         # chave de escopo -> cubo de faturamento por UF (lazy)
     print(f"\nGerando {len(escopos)} arquivos por perfil...")
     for perfil, nome, filtro, extra in escopos:
         if filtro is None:
@@ -330,6 +347,10 @@ def main():
                                     "nome": "VISÃO COMPLETA" if perfil == "gestor" else nome}
             kv_entries[kv_key] = json.dumps(kv_payload, ensure_ascii=False,
                                             separators=(",", ":"))
+            # cubo de faturamento por UF (chave separada, lazy-load na página Faturamento)
+            fat_cube = {"mes_atual": mes_atual,
+                        "clientes": [t[2] for t in cls]}
+            fat_entries[kv_key] = json.dumps(fat_cube, ensure_ascii=False, separators=(",", ":"))
 
         chave = f"{perfil}|{nome}"
         if chave not in senhas:
@@ -359,10 +380,13 @@ def main():
 
     # arquivo de carga em lote p/ o KV (wrangler kv bulk put) — NUNCA commitado
     kv_bulk = [{"key": "dados:" + k, "value": v} for k, v in sorted(kv_entries.items())]
+    kv_bulk += [{"key": "fat:" + k, "value": v} for k, v in sorted(fat_entries.items())]
     with open(os.path.join(TOOLS_DIR, "kv_bulk.local.json"), "w", encoding="utf-8") as fh:
         json.dump(kv_bulk, fh, ensure_ascii=False)
-    print(f"KV: {len(kv_bulk)} escopos em tools/kv_bulk.local.json "
-          f"({sum(len(e['value']) for e in kv_bulk)//1024} KB)")
+    kb = sum(len(e['value']) for e in kv_bulk) // 1024
+    fatkb = sum(len(v) for v in fat_entries.values()) // 1024
+    print(f"KV: {len(kv_bulk)} chaves em tools/kv_bulk.local.json ({kb} KB; fat={fatkb} KB, "
+          f"maior fat={max((len(v) for v in fat_entries.values()), default=0)//1024} KB)")
 
     with open(SENHAS_JSON, "w", encoding="utf-8") as fh:
         json.dump(senhas, fh, ensure_ascii=False, indent=1)

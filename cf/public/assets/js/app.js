@@ -267,6 +267,7 @@ function renderAll() {
   renderMetas(rows, meses);
   renderPositivados(rows);
   renderRankings(rows, meses);
+  if (FAT.cube && $("v-fat").classList.contains("on")) desenharFat();
 }
 
 function renderChips() {
@@ -796,10 +797,146 @@ function emConstrucao(titulo, itens) {
       para não pesar o carregamento). Assim que o pipeline for expandido, ela é preenchida automaticamente.</div>
   </div>`;
 }
-function renderFat() {
-  $("fat-conteudo").innerHTML = emConstrucao("Faturamento por cliente — com drill-down",
-    "Lista de clientes do maior para o menor. Ao abrir um cliente (ex.: <b>ATACADÃO</b>), desce a hierarquia " +
-    "<b>UF › Categoria › Produto</b>, com as colunas <b>2025</b>, <b>2026</b> e <b>% crescimento</b>. Respeita os filtros de gerente/vendedor e período.");
+/* ---------------- Faturamento por cliente (drill-down UF, Top 20, ordenável) ---------------- */
+const FAT = { cube: null, ordCol: "f26", ordDir: -1, abertos: {} };
+
+async function renderFat() {
+  const el = $("fat-conteudo");
+  if (!FAT.cube) {
+    el.innerHTML = '<div class="empty">Carregando detalhamento…</div>';
+    try {
+      const res = await fetch("/api/fatcube", { cache: "no-store" });
+      if (!res.ok) throw new Error("indisponível");
+      FAT.cube = await res.json();
+    } catch { el.innerHTML = '<div class="empty">Não foi possível carregar o detalhamento.</div>'; return; }
+  }
+  desenharFat();
+}
+
+/* soma jan..mês-fechado (mês corrente é parcial e não entra nas colunas travadas) */
+function somaFechado(arr) {
+  const fim = (S.data.periodo.mes_atual - 1) || 1;
+  let s = 0; for (let m = 1; m <= fim; m++) s += arr[m - 1] || 0; return s;
+}
+const somaMeses = (arr, meses) => meses.reduce((s, m) => s + (arr[m - 1] || 0), 0);
+
+function metricasCliente(c) {
+  // colunas travadas no YTD-fechado (jan..mês-fechado)
+  const f25 = c.ufs.reduce((s, u) => s + somaFechado(u.m25), 0);
+  const f26 = c.ufs.reduce((s, u) => s + somaFechado(u.m26), 0);
+  const v25 = c.ufs.reduce((s, u) => s + somaFechado(u.q25), 0);
+  const v26 = c.ufs.reduce((s, u) => s + somaFechado(u.q26), 0);
+  // colunas que seguem o período selecionado
+  const meses = mesesSel();
+  const realizado = c.ufs.reduce((s, u) => s + somaMeses(u.m26, meses), 0);
+  const anoAnt = c.ufs.reduce((s, u) => s + somaMeses(u.m25, meses), 0);
+  const meta = somaMeses(c.meta, meses);
+  return { f25, f26, cr: f25 > 0 ? (f26 - f25) / f25 : null,
+           v25, v26, crv: v25 > 0 ? (v26 - v25) / v25 : null,
+           realizado, anoAnt, meta, ating: meta ? realizado / meta : null, gap: meta ? realizado - meta : null };
+}
+function metricasUF(u) {
+  const f25 = somaFechado(u.m25), f26 = somaFechado(u.m26);
+  const v25 = somaFechado(u.q25), v26 = somaFechado(u.q26);
+  return { f25, f26, cr: f25 > 0 ? (f26 - f25) / f25 : null,
+           v25, v26, crv: v25 > 0 ? (v26 - v25) / v25 : null };
+}
+
+const farol = (x) => x == null ? "" : x >= 0.12 ? "cor-ok" : x >= 0 ? "cor-med" : "cor-bad";
+
+const FAT_COLS = [
+  { k: "rkg", t: "#", sort: false },
+  { k: "cliente", t: "Cliente", sort: "cliente" },
+  { k: "f25", t: "2025", sort: "f25" },
+  { k: "f26", t: "2026", sort: "f26" },
+  { k: "cr", t: "26 vs 25", sort: "cr" },
+  { k: "repr", t: "% Repr", sort: "repr" },
+  { k: "v25", t: "Vol 2025", sort: "v25" },
+  { k: "v26", t: "Vol 2026", sort: "v26" },
+  { k: "crv", t: "26 vs 25 cx", sort: "crv" },
+  { k: "meta", t: "Meta", sort: "meta" },
+  { k: "realizado", t: "Realizado", sort: "realizado" },
+  { k: "ating", t: "% Ating", sort: "ating" },
+  { k: "gap", t: "GAP", sort: "gap" },
+  { k: "anoAnt", t: "Ano ant.", sort: "anoAnt" },
+];
+
+function desenharFat() {
+  // filtra pelos filtros de gerente/vendedor e calcula métricas
+  let linhas = FAT.cube.clientes;
+  if (S.fGer) linhas = linhas.filter((c) => c.ger === S.fGer);
+  if (S.fVend) linhas = linhas.filter((c) => c.vend === S.fVend);
+  let itens = linhas.map((c) => ({ c, m: metricasCliente(c) }));
+  const totalF26 = itens.reduce((s, x) => s + x.m.f26, 0) || 1;
+
+  // ordena e pega Top 20
+  const col = FAT.ordCol, dir = FAT.ordDir;
+  const val = (x) => col === "cliente" ? x.c.cliente : col === "repr" ? x.m.f26 : (x.m[col] ?? -Infinity);
+  itens.sort((a, b) => col === "cliente"
+    ? dir * String(val(a)).localeCompare(String(val(b)), "pt-BR")
+    : dir * (val(a) - val(b)));
+  itens = itens.slice(0, 20);
+
+  const th = FAT_COLS.map((c) => {
+    const ativo = c.sort === FAT.ordCol;
+    const seta = ativo ? (FAT.ordDir < 0 ? " ▼" : " ▲") : "";
+    return `<th class="${["f25", "f26", "cr", "repr", "v25", "v26", "crv", "meta", "realizado", "ating", "gap", "anoAnt"].includes(c.k) ? "r" : ""}${c.sort ? " ord" : ""}${ativo ? " ord-on" : ""}"${c.sort ? ` data-sort="${c.sort}"` : ""}>${c.t}${seta}</th>`;
+  }).join("");
+
+  let corpo = "";
+  itens.forEach((x, i) => {
+    const { c, m } = x;
+    const cai = m.f26 < m.f25;                 // caindo vs ano anterior → vermelho
+    const aberto = !!FAT.abertos[c.cliente + "|" + c.vend];
+    const seta = c.ufs.length > 1 ? (aberto ? "▾" : "▸") : "·";
+    corpo += `<tr class="fat-cli${cai ? " fat-cai" : ""}" data-cli="${esc(c.cliente + "|" + c.vend)}">
+      <td class="r"><b>${i + 1}</b></td>
+      <td><span class="fat-exp">${seta}</span> <b>${esc(c.cliente)}</b></td>
+      ${celFat(m, totalF26)}</tr>`;
+    if (aberto) {
+      const ufs = c.ufs.map((u) => ({ u, m: metricasUF(u) })).sort((a, b) => b.m.f26 - a.m.f26);
+      ufs.forEach((y) => {
+        corpo += `<tr class="fat-uf"><td></td><td style="padding-left:26px;color:var(--mut)">${esc(y.u.uf)}</td>
+          ${celFat(y.m, m.f26 || 1, true)}</tr>`;
+      });
+    }
+  });
+
+  $("fat-conteudo").innerHTML =
+    `<div class="tctl"><span style="color:var(--soft);font-size:11.5px">Top 20 · ${rotuloPer()} · clique num cliente para abrir por UF · clique no cabeçalho para ordenar</span></div>
+     <div class="twrap"><table class="fat-tab"><thead><tr>${th}</tr></thead><tbody>${corpo || '<tr><td colspan="14" class="empty">Sem dados.</td></tr>'}</tbody></table></div>`;
+
+  document.querySelectorAll(".fat-tab th.ord").forEach((h) => h.addEventListener("click", () => {
+    const s = h.dataset.sort;
+    if (FAT.ordCol === s) FAT.ordDir *= -1; else { FAT.ordCol = s; FAT.ordDir = s === "cliente" ? 1 : -1; }
+    desenharFat();
+  }));
+  document.querySelectorAll(".fat-tab tr.fat-cli").forEach((r) => r.addEventListener("click", () => {
+    const k = r.dataset.cli;
+    FAT.abertos[k] = !FAT.abertos[k];
+    desenharFat();
+  }));
+}
+
+function celFat(m, base, uf) {
+  const pct = (x) => x == null ? "—" : (x >= 0 ? "" : "−") + fmtBR(Math.abs(x) * 100, 0) + "%";
+  const repr = uf ? m.f26 / (base || 1) : m.f26 / (base || 1);
+  const cols = [
+    `<td class="r">${fmtM(m.f25)}</td>`,
+    `<td class="r"><b>${fmtM(m.f26)}</b></td>`,
+    `<td class="r"><span class="farolp ${farol(m.cr)}">${pct(m.cr)}</span></td>`,
+    `<td class="r">${fmtBR(repr * 100, 1)}%</td>`,
+    `<td class="r">${fmtBR(m.v25, 0)}</td>`,
+    `<td class="r">${fmtBR(m.v26, 0)}</td>`,
+    `<td class="r"><span class="farolp ${farol(m.crv)}">${pct(m.crv)}</span></td>`,
+  ];
+  if (uf) return cols.join("") + '<td></td><td></td><td></td><td></td><td></td>';
+  return cols.join("") +
+    `<td class="r">${m.meta ? fmtM(m.meta) : "—"}</td>` +
+    `<td class="r">${fmtM(m.realizado)}</td>` +
+    `<td class="r">${m.ating == null ? "—" : fmtBR(m.ating * 100, 0) + "%"}</td>` +
+    `<td class="r" style="color:${m.gap == null ? "var(--soft)" : m.gap >= 0 ? "var(--ok)" : "var(--bad)"}">${m.gap == null ? "—" : (m.gap >= 0 ? "+" : "−") + fmtM(Math.abs(m.gap))}</td>` +
+    `<td class="r">${fmtM(m.anoAnt)}</td>`;
 }
 function renderVol() {
   $("vol-conteudo").innerHTML = emConstrucao("Volume / Mix — visão “batalha naval”",

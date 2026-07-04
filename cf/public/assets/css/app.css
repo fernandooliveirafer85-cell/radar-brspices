@@ -232,6 +232,21 @@ td b{font-weight:650}
 .more:hover{color:var(--teal-d);border-color:var(--teal)}
 .empty{color:var(--soft);font-size:13px;text-align:center;padding:22px}
 
+/* tabela Faturamento (drill-down UF) */
+.fat-tab{font-size:12.5px}
+.fat-tab th.ord{cursor:pointer;user-select:none}
+.fat-tab th.ord:hover{color:var(--teal-d)}
+.fat-tab th.ord-on{color:var(--teal-d)}
+.fat-tab tr.fat-cli{cursor:pointer}
+.fat-tab tr.fat-cli:hover td{background:#f0f6f6}
+.fat-tab tr.fat-cai td b{color:var(--bad)}
+.fat-tab .fat-exp{display:inline-block;width:12px;color:var(--soft)}
+.fat-tab tr.fat-uf td{background:#fafcfc;font-size:12px;border-bottom:1px solid var(--line2)}
+.farolp{display:inline-block;padding:2px 8px;border-radius:6px;font-weight:700;font-size:11.5px}
+.farolp.cor-ok{background:var(--ok-bg);color:var(--ok)}
+.farolp.cor-med{background:var(--warn-bg);color:var(--warn)}
+.farolp.cor-bad{background:var(--bad-bg);color:var(--bad)}
+
 .exp{color:var(--teal-d);border-color:rgba(79,154,160,.45)}
 .exp:hover{color:#fff;background:var(--teal-d);border-color:var(--teal-d)}
 
