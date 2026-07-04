@@ -181,7 +181,8 @@ h2.pg::before{content:"";width:9px;height:9px;background:var(--teal);transform:r
 /* tabelas */
 .twrap{overflow-x:auto}
 table{width:100%;border-collapse:collapse;font-size:11.5px}
-th{background:var(--ink);color:#fff;font-size:10px;text-transform:uppercase;letter-spacing:.1em;text-align:left;
+th{background:linear-gradient(180deg,var(--aqua),var(--teal-d));color:#fff;font-size:10px;
+  text-transform:uppercase;letter-spacing:.1em;text-align:left;
   padding:7px 9px;font-weight:700;white-space:nowrap}
 th:first-child{border-radius:8px 0 0 8px}
 th:last-child{border-radius:0 8px 8px 0}
@@ -239,7 +240,9 @@ td b{font-weight:650}
 .fat-tab th.ord{cursor:pointer;user-select:none}
 .fat-tab th.ord:hover{color:var(--aqua-l)}
 .fat-tab th.ord-on{color:var(--creme)}
-.fat-tab tr.fat-total td{background:var(--ink);color:#fff;font-weight:700;border-bottom:2px solid var(--teal)}
+.fat-tab tr.fat-total td{background:var(--ink);color:#fff;font-weight:700;border-top:2px solid var(--teal)}
+.fat-tab tr.fat-total td:first-child{border-radius:0 0 0 8px}
+.fat-tab tr.fat-total td:last-child{border-radius:0 0 8px 0}
 .fat-tab tr.fat-total .farolp{background:rgba(255,255,255,.15);color:#fff}
 .fat-tab tr.fat-cli{cursor:pointer}
 .fat-tab tr.fat-cli:hover td{background:#f0f6f6}

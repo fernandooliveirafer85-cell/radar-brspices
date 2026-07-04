@@ -742,8 +742,8 @@ async function exportExcel() {
         m.meta ? Math.round(m.meta) : null, Math.round(m.realizado), m.ating,
         m.gap == null ? null : Math.round(m.gap), Math.round(m.anoAnt)];
       xlTabela(ws, `Faturamento por cliente — 2025/2026/volumes travados no fechado · Meta em diante: ${rotuloPer()}`,
-        cab, [linha(null, `TOTAL GERAL (${itens.length} clientes)`, tot, totalF26),
-              ...itens.map((x, i) => linha(i + 1, x.c.cliente, x.m, totalF26))],
+        cab, [...itens.map((x, i) => linha(i + 1, x.c.cliente, x.m, totalF26)),
+              linha(null, `TOTAL GERAL (${itens.length} clientes)`, tot, totalF26)],
         fmts, [5, 36, 14, 14, 10, 9, 11, 11, 11, 13, 13, 9, 13, 14]);
       const ufRows = [];
       itens.slice(0, 20).forEach((x, i) => {
@@ -953,9 +953,7 @@ function desenharFat() {
     return `<th class="${["f25", "f26", "cr", "repr", "v25", "v26", "crv", "meta", "realizado", "ating", "gap", "anoAnt"].includes(c.k) ? "r" : ""}${c.sort ? " ord" : ""}${ativo ? " ord-on" : ""}"${c.sort ? ` data-sort="${c.sort}"` : ""}>${c.t}${seta}</th>`;
   }).join("");
 
-  let corpo = nCli === 0 ? "" : `<tr class="fat-total"><td class="r">Σ</td>
-    <td><b>TOTAL GERAL</b> <span style="opacity:.75;font-weight:400">· ${nCli} clientes</span></td>
-    ${celFat(tot, totalF26)}</tr>`;
+  let corpo = "";
   itens.forEach((x, i) => {
     const { c, m } = x;
     const cai = m.f26 < m.f25;                 // caindo vs ano anterior → vermelho
@@ -973,6 +971,10 @@ function desenharFat() {
       });
     }
   });
+  // TOTAL GERAL fecha a tabela (soma do escopo inteiro, não só o top 20)
+  if (nCli > 0) corpo += `<tr class="fat-total"><td class="r">Σ</td>
+    <td><b>TOTAL GERAL</b> <span style="opacity:.75;font-weight:400">· ${nCli} clientes</span></td>
+    ${celFat(tot, totalF26)}</tr>`;
 
   $("fat-conteudo").innerHTML =
     `<div class="tctl"><span style="color:var(--soft);font-size:11.5px">Top 20 · ${rotuloPer()} · clique num cliente para abrir por UF · clique no cabeçalho para ordenar</span></div>
