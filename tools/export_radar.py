@@ -445,6 +445,16 @@ def main():
     fat["ABS"] = fat["ANO"] * 12 + fat["MES"]
     f6 = fat[(fat["ABS"] >= idx_abs - 6) & (fat["ABS"] < idx_abs)]
     prod_cli6 = f6.groupby("PRODP")["BAND"].apply(set)
+    # mix por CLIENTE-BANDEIRA × UF × item (base da visão Mix por Cliente: S/N, share, cx, valor)
+    gufs = f6.groupby(["BAND", "ESTADO", "PRODP"])[["QUANTIDADE", "TOTAL"]].sum()
+    mix_ufs = []
+    for (b, u, p), r in gufs.iterrows():
+        q, t = float(r["QUANTIDADE"]), float(r["TOTAL"])
+        if q <= 0 and t <= 0:
+            continue
+        mix_ufs.append({"c": b, "u": str(u).strip() or "—", "p": p,
+                        "cx": round(q, 1), "vl": round(t)})
+    print(f"MIX-UF: {len(mix_ufs)} células cliente×UF×item (janela 6m fechados)")
     print(f"MIX: {len(mix_cats)} linhas categoria×cliente | {len(mix_prods)} linhas produto×vendedor "
           f"| dev por produto: {'sim' if tem_dev_prod else 'NÃO (mix bruto)'}")
 
@@ -575,8 +585,9 @@ def main():
             # base compradora por produto (bandeiras do ESCOPO comprando nos últimos 6 meses fechados)
             ncli_prod = {p: len(bs & bands_escopo) for p, bs in prod_cli6.items()
                          if len(bs & bands_escopo)}
+            mu = [e for e in mix_ufs if e["c"] in bands_escopo]
             mix_entries[kv_key] = json.dumps({"mes_atual": mes_atual, "cats": mc, "prods": mp,
-                                              "ncli_prod": ncli_prod, "ids": prod_ids},
+                                              "ncli_prod": ncli_prod, "ids": prod_ids, "ufs": mu},
                                              ensure_ascii=False, separators=(",", ":"))
 
         chave = f"{perfil}|{nome}"

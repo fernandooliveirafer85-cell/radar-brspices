@@ -227,6 +227,17 @@ h2.pg::before{content:"";width:9px;height:9px;background:var(--teal);transform:r
 .vol-tab td.vz{text-align:center;color:#d3dadb;min-width:56px}
 .vol-tab tr.vol-prod td{font-size:10.5px}
 .vol-tab tr.fat-total td.volfix{color:#fff}
+/* Mix por Cliente: rótulo colorido da linha, células SIM/NÃO e cabeçalhos cliente/UF */
+.vlinha{display:inline-block;min-width:76px;max-width:96px;padding:1.5px 6px;border-radius:4px;
+  color:#fff;font-size:8.5px;font-weight:700;letter-spacing:.02em;text-align:center;
+  overflow:hidden;text-overflow:ellipsis;vertical-align:1px;margin-right:5px}
+.vsn{text-align:center;font-size:9px;font-weight:800;letter-spacing:.03em;min-width:44px}
+.vsn.s{background:#dcefe2;color:#1d6b3f}
+.vsn.n{background:#fdeaea;color:#c0392b}
+.vol-tab th.vclih{cursor:pointer;text-align:center;font-size:9px;padding:5px 4px;max-width:110px;
+  overflow:hidden;text-overflow:ellipsis}
+.vol-tab th.vufh{font-size:8.5px;padding:3px 5px;text-align:center;background:rgba(47,125,124,.85)}
+#vol-info .fchip{cursor:pointer}
 
 /* selo da curva de vendas — padrão de cores oficial da empresa (A→D azuis, DELIST vermelho) */
 .curva{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;

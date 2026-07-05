@@ -1981,8 +1981,11 @@ async function processarUploadCurva(file) {
     const ws = wb.worksheets[0];
     // cabeçalhos aceitos (flexível): ITEM/PRODUTO(S), ID/ID_PRODUTO/SKU, EAN,
     // CURVA (DE VENDAS), RANKING/RKG DE VENDAS POR LINHA (prioridade) ou RKG geral, MIX/PRIORIDADE
-    const ehItem = (v) => v === "ITEM" || (v.includes("PRODUTO") && !v.includes("ID"));
+    const ehItem = (v) => v === "ITEM" ||
+      (v.includes("PRODUTO") && !v.includes("ID") && !v.includes("LINHA") && !v.includes("QTDE"));
     const ehId = (v) => v === "ID" || v === "SKU" || (v.includes("ID") && v.includes("PROD"));
+    const LIXO = ["PRODUTO", "PRODUTOS", "LINHA DE PRODUTOS", "LINHA PRODUTOS", "CURVA DE VENDAS",
+                  "QTDE DE ITENS", "INOVAÇÕES", "CLIENTE | UF", "ITEM"];
     let hdr = 0; const m = {};
     ws.eachRow((row, n) => {
       if (hdr) return;
@@ -1998,6 +2001,8 @@ async function processarUploadCurva(file) {
           else if (m.rkgGeral == null && (v.includes("RKG") || v.includes("RANKING"))) m.rkgGeral = i;  // reserva
           else if (m.curva == null && v.startsWith("CURVA")) m.curva = i;
           else if (m.grupo == null && v.includes("GRUPO")) m.grupo = i;   // GRUPO DE REVISÃO
+          else if (m.linha == null && v.includes("LINHA") && !v.includes("RKG") && !v.includes("RANKING"))
+            m.linha = i;                                                   // LINHA PRODUTOS
           else if (m.acao == null && (v.includes("MIX") || v.includes("PRIORIT"))) m.acao = i;
         });
         if (m.rkg == null) m.rkg = m.rkgGeral;   // sem coluna "por linha", usa o RKG que houver
@@ -2014,11 +2019,15 @@ async function processarUploadCurva(file) {
         return String(typeof c === "object" ? (c.text ?? c.result ?? "") : c).trim();
       };
       const item = cel(m.item);
-      if (!item) return;
-      itens.push({ item, id: cel(m.id),
+      const idBruto = cel(m.id);
+      // descarta linhas de cabeçalho/resumo que se repetem dentro da planilha
+      if (!item || item.includes("→") || LIXO.includes(item.toUpperCase()) ||
+          (idBruto && !/\d/.test(idBruto))) return;
+      itens.push({ item, id: idBruto,
         rkg: parseInt(cel(m.rkg).replace(/[^\d]/g, ""), 10) || null,
         curva: curvaNorm(cel(m.curva)),
         grupo: cel(m.grupo).toUpperCase(),
+        linha: cel(m.linha).toUpperCase(),
         acao: cel(m.acao).toUpperCase() });
     });
     if (!itens.length) throw new Error("nenhuma linha de item encontrada abaixo do cabeçalho");
@@ -2130,7 +2139,7 @@ function renderCurva() {
 }
 
 /* ---------------- Mix por Cliente: batalha naval itens × clientes ---------------- */
-const VOL = { abertos: {}, metrica: "cx", nCli: 18, linhas: null, grupo: "" };
+const VOL = { metrica: "cx", nCli: 12, linhas: null, grupo: "", resumo: "", cliAbertos: {} };
 
 /* item → grupo de revisão (coluna GRUPO do MIX PADRÃO subido na base oficial) */
 function grupoLookup() {
@@ -2162,15 +2171,74 @@ function montarLinhasVol(cats) {
   $("vol-linha-btn").textContent = n === total ? "Todas as categorias" : `${n} de ${total} categorias`;
 }
 
+/* cores das LINHAS de produto (paleta aproximada do MIX PADRÃO do Fernando — ajustável) */
+const CORES_LINHA = [
+  ["SAL SAUD", "#1F6FB4"], ["CHURRASCO", "#D06A29"], ["MOEDOR", "#3E3E3E"],
+  ["ESSENCIAL", "#4E8542"], ["POTE | GOURMET", "#8A2E2E"], ["POTE | FIT", "#2E7D7C"],
+  ["HEINZ", "#C00000"], ["QUERO", "#C9821F"], ["RECEITAS", "#8A5A34"],
+  ["AIR FRYER", "#5C6A70"], ["FAROFA", "#A0722F"], ["KIT", "#6B4FA1"],
+  ["SALADA", "#6FA84F"], ["FOOD SERVICE", "#4F6D8F"], ["SALT", "#1F6FB4"],
+];
+function corLinha(nome) {
+  const s = String(nome || "").toUpperCase();
+  for (const [k, c] of CORES_LINHA) if (s.includes(k)) return c;
+  return "var(--teal-d)";
+}
+const ehLancamento = (c) => {
+  const s = String(c || "").toUpperCase();
+  return s.includes("LÇT") || s.includes("LCT") || s.includes("LAN");
+};
+
 function renderVol() {
   if (!MIX.cube) {
     $("vol-conteudo").innerHTML = '<div class="empty">Carregando cubo de produtos…</div>';
     carregarMix();
     return;
   }
-  carregarCurvaOficial();   // p/ o grupo de revisão (só carrega no perfil autorizado)
-  montarLinhasVol([...new Set(MIX.cube.prods.map((p) => p.cat))].sort());
-  // chips de GRUPO DE REVISÃO (aparecem quando a base oficial subida tiver a coluna)
+  if (!MIX.cube.ufs) {
+    $("vol-conteudo").innerHTML = '<div class="empty">Base cliente × UF ainda não publicada — clique em "Atualizar dados" mais tarde.</div>';
+    return;
+  }
+  carregarCurvaOficial();
+
+  // catálogo: curva e categoria por item (reserva qdo não há base oficial)
+  if (!MIX._pInfo) {
+    const m = {};
+    for (const p of MIX.cube.prods) {
+      const k = String(p.prod).toUpperCase();
+      if (!m[k]) m[k] = { curva: p.curva, cat: p.cat };
+    }
+    MIX._pInfo = m;
+  }
+  const pInfo = MIX._pInfo;
+
+  // ITENS: ordem FIXA do MIX PADRÃO (base oficial) quando existir; senão catálogo por categoria
+  const oficial = CURVA.oficial && CURVA.oficial.itens && CURVA.oficial.itens.length ? CURVA.oficial.itens : null;
+  let itens;
+  if (oficial) {
+    const vistos = new Set();
+    itens = oficial.filter((o) => {
+      const K = String(o.item).toUpperCase();
+      if (vistos.has(K)) return false;
+      vistos.add(K);
+      return true;
+    }).map((o) => ({ item: o.item, K: String(o.item).toUpperCase(),
+      linha: o.linha || rotuloCat((pInfo[String(o.item).toUpperCase()] || {}).cat || ""),
+      curva: o.curva || (pInfo[String(o.item).toUpperCase()] || {}).curva || "",
+      grupo: o.grupo || "" }));
+  } else {
+    const gl0 = grupoLookup();
+    itens = Object.entries(pInfo).map(([K, i]) => ({ item: K, K,
+      linha: rotuloCat(i.cat), curva: i.curva, grupo: gl0 ? (gl0[K] || "") : "" }))
+      .sort((a, b) => a.linha.localeCompare(b.linha, "pt-BR") || a.item.localeCompare(b.item, "pt-BR"));
+  }
+
+  // janela de LINHAS (checkboxes) — nomes vindos da estrutura atual
+  const linhasNomes = [...new Set(itens.map((i) => i.linha).filter(Boolean))];
+  montarLinhasVol(linhasNomes);
+  if (VOL.linhas) itens = itens.filter((i) => VOL.linhas.includes(i.linha));
+
+  // chips de GRUPO DE REVISÃO
   const gl = grupoLookup();
   const gEl = $("vol-grupos");
   const grupos = gl ? [...new Set(Object.values(gl))].sort() : [];
@@ -2180,85 +2248,130 @@ function renderVol() {
     VOL.grupo = VOL.grupo === b.dataset.g ? "" : b.dataset.g;
     renderVol();
   }));
+  if (VOL.grupo) itens = itens.filter((i) => (i.grupo || (gl ? gl[i.K] : "")) === VOL.grupo);
+  if (S.fCat) itens = itens.filter((i) => (pInfo[i.K] || {}).cat === S.fCat);
+  if (S.fProd) itens = itens.filter((i) => i.K === S.fProd.toUpperCase());
 
-  const meses = mesesSel();
+  // RESUMO CLICÁVEL: contagens que filtram os itens
+  const nA = itens.filter((i) => curvaNorm(i.curva) === "A").length;
+  const nL = itens.filter((i) => ehLancamento(i.curva)).length;
+  const nFL = itens.filter((i) => curvaNorm(i.curva) === "FL").length;
+  if (VOL.resumo === "A") itens = itens.filter((i) => curvaNorm(i.curva) === "A");
+  if (VOL.resumo === "LCT") itens = itens.filter((i) => ehLancamento(i.curva));
+  if (VOL.resumo === "FL") itens = itens.filter((i) => curvaNorm(i.curva) === "FL");
+
+  // CÉLULAS: cubo cliente × UF × item (janela fixa: últimos 6 meses fechados)
   const escopo = new Set(linhas().map((p) => p.cliente));
-  let r = MIX.cube.prods.filter((p) => escopo.has(p.cliente));
-  if (VOL.linhas) r = r.filter((p) => VOL.linhas.includes(p.cat));
-  if (VOL.grupo && gl) r = r.filter((p) => gl[String(p.prod).toUpperCase()] === VOL.grupo);
-  if (S.fCat) r = r.filter((p) => p.cat === S.fCat);
-  if (S.fProd) r = r.filter((p) => p.prod === S.fProd);
-  const cxP = (e) => somaMeses(e.q26, meses);
-  const valP = (e) => somaMeses(e.m26, meses);
-  const met = VOL.metrica === "cx" ? cxP : valP;
-  const fmtCel = (v) => VOL.metrica === "cx" ? fmtBR(v, 0) : fmtV(v);
-
-  // top clientes (colunas) pela métrica no período
-  const porCli = {};
-  for (const p of r) porCli[p.cliente] = (porCli[p.cliente] || 0) + met(p);
-  const clis = Object.entries(porCli).filter(([, v]) => v > 0)
-    .sort((a, b) => b[1] - a[1]).slice(0, VOL.nCli).map(([n]) => n);
-  const cliSet = new Set(clis);
-
-  // categoria → produtos → células por cliente (guarda cx E valor p/ o tooltip)
-  const cats = {};
-  for (const p of r) {
-    const cx = cxP(p), vl = valP(p);
-    if (!cx && !vl) continue;
-    const cat = (cats[p.cat] ??= { nome: p.cat, tot: 0, cli: {}, prods: {} });
-    cat.tot += met(p);
-    const pr = (cat.prods[p.prod] ??= { nome: p.prod, curva: p.curva, tot: 0, cli: {} });
-    pr.tot += met(p);
-    if (cliSet.has(p.cliente)) {
-      const cc = (cat.cli[p.cliente] ??= { m: 0, cx: 0, vl: 0 });
-      cc.m += met(p); cc.cx += cx; cc.vl += vl;
-      const pc = (pr.cli[p.cliente] ??= { m: 0, cx: 0, vl: 0 });
-      pc.m += met(p); pc.cx += cx; pc.vl += vl;
-    }
+  const cel = {}, colTot = {}, cliTot = {}, cliUFs = {};
+  for (const e of MIX.cube.ufs) {
+    if (!escopo.has(e.c)) continue;
+    const P = String(e.p).toUpperCase();
+    const kU = e.c + "|" + e.u, kA = e.c + "|*";
+    (cel[P + "|" + kU] ??= { cx: 0, vl: 0 }); cel[P + "|" + kU].cx += e.cx; cel[P + "|" + kU].vl += e.vl;
+    (cel[P + "|" + kA] ??= { cx: 0, vl: 0 }); cel[P + "|" + kA].cx += e.cx; cel[P + "|" + kA].vl += e.vl;
+    colTot[kU] = (colTot[kU] || 0) + e.cx;
+    colTot[kA] = (colTot[kA] || 0) + e.cx;
+    cliTot[e.c] = (cliTot[e.c] || 0) + e.cx;
+    (cliUFs[e.c] ??= {}); cliUFs[e.c][e.u] = (cliUFs[e.c][e.u] || 0) + e.cx;
   }
-  const catList = Object.values(cats).filter((c) => c.tot > 0).sort((a, b) => b.tot - a.tot);
+  const clis = Object.entries(cliTot).sort((a, b) => b[1] - a[1]).slice(0, VOL.nCli).map(([n]) => n);
 
-  const celula = (obj, max, rotLinha, cliente) => {
-    if (!obj || !obj.m) return '<td class="vz">·</td>';
-    const a = 0.08 + 0.55 * Math.min(1, obj.m / (max || 1));
-    const repr = porCli[cliente] ? obj.m / porCli[cliente] : 0;
-    return `<td class="r vc" style="background:rgba(47,125,124,${a.toFixed(2)})"
-      title="${esc(cliente)} × ${esc(rotLinha)}: ${fmtBR(obj.cx, 0)} cx · ${fmtV(obj.vl)} · ${fmtBR(repr * 100, 1)}% do cliente">${fmtCel(obj.m)}</td>`;
+  // colunas: cliente (agrupado) → UFs expandíveis
+  const colunas = [];
+  for (const c of clis) {
+    const ufs = Object.entries(cliUFs[c]).sort((a, b) => b[1] - a[1]).map(([u]) => u);
+    if (VOL.cliAbertos[c] && ufs.length > 1) for (const u of ufs) colunas.push({ c, u });
+    else colunas.push({ c, u: ufs.length === 1 ? ufs[0] : "*" });
+  }
+
+  const fmtCel = { cx: (o) => fmtBR(o.cx, 0), val: (o) => fmtV(o.vl),
+    sn: () => "", share: () => "" }[VOL.metrica];
+  const celula = (it, col) => {
+    const o = cel[it.K + "|" + col.c + "|" + col.u];
+    const tot = colTot[col.c + "|" + col.u] || 0;
+    const share = o && tot ? o.cx / tot : 0;
+    const tip = o ? `${esc(col.c)}${col.u !== "*" ? " · " + esc(col.u) : ""} × ${esc(it.item)}: ` +
+      `${fmtBR(o.cx, 0)} cx · ${fmtV(o.vl)} · share ${fmtBR(share * 100, 1)}%` : "";
+    if (VOL.metrica === "sn")
+      return o ? `<td class="vsn s" title="${tip}">SIM</td>` : '<td class="vsn n">NÃO</td>';
+    if (!o) return '<td class="vz">·</td>';
+    if (VOL.metrica === "share") {
+      const a = 0.08 + 0.6 * Math.min(1, share * 3);
+      return `<td class="r vc" style="background:rgba(47,125,124,${a.toFixed(2)})" title="${tip}">${fmtBR(share * 100, share >= 0.1 ? 0 : 1)}%</td>`;
+    }
+    const base = VOL.metrica === "cx" ? o.cx : o.vl;
+    const max = it._max || 1;
+    const a = 0.08 + 0.55 * Math.min(1, base / max);
+    return `<td class="r vc" style="background:rgba(47,125,124,${a.toFixed(2)})" title="${tip}">${fmtCel(o)}</td>`;
   };
 
-  const th = `<th class="volfix">CATEGORIA / PRODUTO</th><th class="r">TOTAL</th>` +
-    clis.map((c) => `<th class="vcol" title="${esc(c)}"><span>${esc(c.length > 16 ? c.slice(0, 15) + "…" : c)}</span></th>`).join("");
-  let corpo = "";
-  for (const cat of catList) {
-    const aberto = !!VOL.abertos[cat.nome];
-    const maxCat = Math.max(1, ...clis.map((c) => cat.cli[c]?.m || 0));
-    corpo += `<tr class="vol-cat" data-cat="${esc(cat.nome)}">
-      <td class="volfix"><span class="fat-exp">${aberto ? "▾" : "▸"}</span> <b>${esc(rotuloCat(cat.nome))}</b></td>
-      <td class="r"><b>${fmtCel(cat.tot)}</b></td>` +
-      clis.map((c) => celula(cat.cli[c], maxCat, rotuloCat(cat.nome), c)).join("") + "</tr>";
-    if (aberto) {
-      const prods = Object.values(cat.prods).filter((p) => p.tot > 0).sort((a, b) => b.tot - a.tot);
-      for (const pr of prods) {
-        const maxP = Math.max(1, ...clis.map((c) => pr.cli[c]?.m || 0));
-        corpo += `<tr class="vol-prod">
-          <td class="volfix" style="padding-left:24px">${pr.curva ? seloCurva(pr.curva) + " " : ""}${esc(pr.nome)}</td>
-          <td class="r">${fmtCel(pr.tot)}</td>` +
-          clis.map((c) => celula(pr.cli[c], maxP, pr.nome, c)).join("") + "</tr>";
-      }
-    }
+  // cabeçalho em 2 linhas: cliente (agrupa e expande) / UF
+  let th1 = `<th class="volfix" rowspan="2">LINHA · PRODUTO</th><th class="r" rowspan="2">TOTAL</th>`;
+  let th2 = "";
+  for (const c of clis) {
+    const ufs = Object.keys(cliUFs[c]);
+    const aberto = VOL.cliAbertos[c] && ufs.length > 1;
+    const span = aberto ? ufs.length : 1;
+    const multi = ufs.length > 1;
+    th1 += `<th colspan="${span}" class="vclih${multi ? " ord" : ""}" data-c="${esc(c)}"
+      title="${esc(c)}${multi ? " — clique para " + (aberto ? "recolher" : "abrir por UF") : ""}">
+      ${esc(c.length > 14 ? c.slice(0, 13) + "…" : c)}${multi ? (aberto ? " ▾" : " ▸") : ""}</th>`;
+    if (aberto) for (const [u] of Object.entries(cliUFs[c]).sort((a, b) => b[1] - a[1])) th2 += `<th class="r vufh">${esc(u)}</th>`;
+    else th2 += `<th class="r vufh">${!multi ? esc(ufs[0] || "") : "Σ " + ufs.length + " UF"}</th>`;
   }
-  // linha TOTAL por cliente
-  corpo += `<tr class="fat-total"><td class="volfix" style="background:var(--ink)"><b>TOTAL</b></td>
-    <td class="r"><b>${fmtCel(catList.reduce((s, c) => s + c.tot, 0))}</b></td>` +
-    clis.map((c) => `<td class="r"><b>${fmtCel(porCli[c] || 0)}</b></td>`).join("") + "</tr>";
 
-  $("vol-info").textContent =
-    `top ${clis.length} clientes por ${VOL.metrica === "cx" ? "caixas" : "valor"} · ${rotuloPer()} · clique na categoria para abrir os itens`;
+  let corpo = "";
+  for (const it of itens) {
+    const totIt = cel[it.K + "|"] ? 0 : colunas.reduce((s, col) => s + ((cel[it.K + "|" + col.c + "|" + col.u] || {}).cx || 0), 0);
+    it._max = Math.max(1, ...colunas.map((col) => {
+      const o = cel[it.K + "|" + col.c + "|" + col.u];
+      return o ? (VOL.metrica === "val" ? o.vl : o.cx) : 0;
+    }));
+    const totObj = colunas.reduce((s, col) => {
+      const o = cel[it.K + "|" + col.c + "|" + col.u];
+      if (o) { s.cx += o.cx; s.vl += o.vl; }
+      return s;
+    }, { cx: 0, vl: 0 });
+    corpo += `<tr class="vol-prod">
+      <td class="volfix"><span class="vlinha" style="background:${corLinha(it.linha)}">${esc(it.linha || "—")}</span>
+        ${it.curva ? seloCurva(it.curva) + " " : ""}${esc(it.item)}</td>
+      <td class="r">${VOL.metrica === "sn" ? fmtBR(colunas.filter((col) => cel[it.K + "|" + col.c + "|" + col.u]).length) :
+        VOL.metrica === "share" ? "—" : (VOL.metrica === "cx" ? fmtBR(totObj.cx, 0) : fmtV(totObj.vl))}</td>` +
+      colunas.map((col) => celula(it, col)).join("") + "</tr>";
+  }
+  // TOTAL por coluna
+  corpo += `<tr class="fat-total"><td class="volfix" style="background:var(--ink)"><b>TOTAL</b></td><td class="r"></td>` +
+    colunas.map((col) => {
+      if (VOL.metrica === "sn") {
+        const n = itens.filter((it) => cel[it.K + "|" + col.c + "|" + col.u]).length;
+        return `<td class="r"><b>${fmtBR(n)}</b></td>`;
+      }
+      if (VOL.metrica === "share") return '<td class="r">—</td>';
+      const t = itens.reduce((s, it) => {
+        const o = cel[it.K + "|" + col.c + "|" + col.u];
+        return s + (o ? (VOL.metrica === "cx" ? o.cx : o.vl) : 0);
+      }, 0);
+      return `<td class="r"><b>${VOL.metrica === "cx" ? fmtBR(t, 0) : fmtV(t)}</b></td>`;
+    }).join("") + "</tr>";
+
+  const resumoChip = (rot, n, cod) =>
+    `<span class="fchip${VOL.resumo === cod ? " on" : ""}" data-res="${cod}" style="padding:3px 9px;font-size:10px">${rot}: <b>${fmtBR(n)}</b></span>`;
+  $("vol-info").innerHTML =
+    resumoChip("Itens", itens.length, "") + " " + resumoChip("Curva A", nA, "A") + " " +
+    resumoChip("Lançamentos", nL, "LCT") + " " + resumoChip("Fora de linha", nFL, "FL") +
+    ` <span style="color:var(--soft)">· janela fixa: últimos 6 meses fechados · top ${clis.length} clientes · clique no cliente para abrir por UF</span>`;
+  $("vol-info").querySelectorAll("[data-res]").forEach((b) => b.addEventListener("click", () => {
+    VOL.resumo = VOL.resumo === b.dataset.res ? "" : b.dataset.res;
+    renderVol();
+  }));
+
   $("vol-conteudo").innerHTML =
-    `<div class="twrap"><table class="fat-tab vol-tab"><thead><tr>${th}</tr></thead><tbody>${corpo ||
-      `<tr><td class="empty">Sem dados na seleção.</td></tr>`}</tbody></table></div>`;
-  document.querySelectorAll(".vol-tab tr.vol-cat").forEach((row) => row.addEventListener("click", () => {
-    VOL.abertos[row.dataset.cat] = !VOL.abertos[row.dataset.cat];
+    `<div class="twrap"><table class="fat-tab vol-tab"><thead><tr>${th1}</tr><tr>${th2}</tr></thead><tbody>${corpo ||
+      `<tr><td class="empty">Sem itens na seleção.</td></tr>`}</tbody></table></div>` +
+    (oficial ? "" : `<div class="note">Estrutura padrão (ordem fixa, linhas e grupos) aparece após o upload do
+      <b>MIX PADRÃO</b> na guia RKG Itens — por enquanto os itens estão agrupados pela categoria do catálogo.</div>`);
+  document.querySelectorAll(".vol-tab th.vclih").forEach((h) => h.addEventListener("click", () => {
+    VOL.cliAbertos[h.dataset.c] = !VOL.cliAbertos[h.dataset.c];
     renderVol();
   }));
 }
