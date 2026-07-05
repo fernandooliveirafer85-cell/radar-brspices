@@ -2365,6 +2365,20 @@ function renderVol() {
     else th2 += `<th class="r vufh">${!multi ? esc(ufs[0] || "") : "Σ " + ufs.length + " UF"}</th>`;
   }
 
+  // RESUMO POR CLIENTE acima da barra (como no MIX PADRÃO): contagens por coluna
+  const contaCol = (col, filtro) => itens.filter((it) =>
+    (!filtro || filtro(it)) && cel[it.K + "|" + col.c + "|" + col.u]).length;
+  const linhaSum = (rot, filtro, cls) =>
+    `<tr class="vol-sumh${cls ? " " + cls : ""}"><th class="volfix vslf"></th>` +
+    `<th colspan="${extras}" class="vsl">${rot}</th>` +
+    colunas.map((col) => `<th class="vsq">${fmtBR(contaCol(col, filtro))}</th>`).join("") + "</tr>";
+  const thSum =
+    linhaSum("QTDE DE ITENS →", null, "qtde") +
+    linhaSum("CURVA A →", (it) => curvaNorm(it.curva) === "A") +
+    linhaSum("INOVAÇÃO →", (it) => ehLancamento(it.curva)) +
+    linhaSum("QUERO →", (it) => String(it.grupo).toUpperCase().includes("QUERO") ||
+                                String(it.linha).toUpperCase().includes("QUERO"));
+
   let corpo = "";
   for (const it of itens) {
     it._max = Math.max(1, ...colunas.map((col) => {
@@ -2415,7 +2429,7 @@ function renderVol() {
   }));
 
   $("vol-conteudo").innerHTML =
-    `<div class="twrap"><table class="fat-tab vol-tab"><thead><tr>${th1}</tr><tr>${th2}</tr></thead><tbody>${corpo ||
+    `<div class="twrap"><table class="fat-tab vol-tab"><thead>${thSum}<tr>${th1}</tr><tr>${th2}</tr></thead><tbody>${corpo ||
       `<tr><td class="empty">Sem itens na seleção.</td></tr>`}</tbody></table></div>` +
     (oficial ? "" : `<div class="note">Estrutura padrão (ordem fixa, linhas e grupos) aparece após o upload do
       <b>MIX PADRÃO</b> na guia RKG Itens — por enquanto os itens estão agrupados pela categoria do catálogo.</div>`);

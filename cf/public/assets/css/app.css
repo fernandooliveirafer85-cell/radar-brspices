@@ -239,6 +239,12 @@ h2.pg::before{content:"";width:9px;height:9px;background:var(--teal);transform:r
 .vol-tab th.vufh{font-size:8.5px;padding:3px 5px;text-align:center;background:rgba(47,125,124,.85)}
 #vol-info .fchip{cursor:pointer}
 .vfoto{height:26px;border-radius:4px;display:inline-block;vertical-align:middle}
+/* resumo por cliente ACIMA da barra (QTDE DE ITENS / CURVA A / INOVAÇÃO / QUERO) */
+.vol-tab tr.vol-sumh th{background:#2c4f56;color:#e8f1f1;font-size:9px;padding:3px 5px;
+  text-align:center;font-weight:600;border-right:1px solid rgba(255,255,255,.18);letter-spacing:.03em}
+.vol-tab tr.vol-sumh th.vsl{text-align:right;padding-right:12px}
+.vol-tab tr.vol-sumh th.vslf{background:#2c4f56}
+.vol-tab tr.vol-sumh.qtde th{background:var(--ink);font-weight:800;font-size:10px}
 /* células da matriz: verde quando compra, vermelho quando não — sempre centralizadas */
 .vcg{text-align:center;font-variant-numeric:tabular-nums;font-size:10.5px;font-weight:600;
   color:#0f3d26;min-width:56px}
