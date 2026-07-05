@@ -2,7 +2,7 @@
    Login: senha → SHA-256 → data/<hash>.enc.json → PBKDF2 + AES-GCM (WebCrypto). */
 "use strict";
 
-const S = { data: null, fGer: "", fVend: "", fCanal: "", fCat: "", fCli: "", fEstr: [], ano: 2026, meses: [],
+const S = { data: null, fGer: "", fVend: "", fCanal: "", fCat: "", fCli: "", fProd: "", fUF: "", fEstr: [], ano: 2026, meses: [],
             nPos: 100, nCli: 50, fStatus: "", busca: "", buscaMeta: "", fracMes: 1,
             numModo: localStorage.getItem("bv_num") || "detalhado" };
 const $ = (id) => document.getElementById(id);
@@ -263,7 +263,7 @@ function filtrarCli(n) {
 }
 
 function limparFiltros() {
-  S.fGer = ""; S.fVend = ""; S.fCanal = ""; S.fCat = ""; S.fCli = ""; S.fEstr = [];  // zera o ESTADO
+  S.fGer = ""; S.fVend = ""; S.fCanal = ""; S.fCat = ""; S.fCli = ""; S.fProd = ""; S.fUF = ""; S.fEstr = [];
   document.querySelectorAll("#estr-btns button").forEach((b) => b.classList.remove("on"));
   if ($("f-ger")) $("f-ger").value = "";
   if ($("f-vend")) $("f-vend").value = "";
@@ -287,7 +287,9 @@ function linhas() {
   if (S.fCli) r = r.filter((p) => p.cliente === S.fCli);
   return r;
 }
-const filtrado = () => !!(S.fGer || S.fVend || S.fCanal || S.fCat || S.fEstr.length || S.fCli);
+const filtrado = () => !!(S.fGer || S.fVend || S.fCanal || S.fCat || S.fEstr.length || S.fCli || S.fProd || S.fUF);
+/* recorte que o cubo principal não abre (categoria/produto/UF) — KPIs sem série mostram "—" */
+const recorteEspecial = () => !!(S.fCat || S.fProd || S.fUF);
 
 /* cliente ativo = comprou em algum dos últimos 6 meses FECHADOS */
 function ativo6(p) {
@@ -323,18 +325,64 @@ function linhasMix() {
     m24: Z12(), m25: c.m25, m26: c.m26, q26: c.q26, meta: Z12(),
     status: "", ult: null, perdido: 0, media: 0, meses_sem: 99 }));
 }
+/* cliente-bandeira → fatia dominante (vend/ger) do cubo principal */
+function cliInfoLookup() {
+  if (S._cliInfo) return S._cliInfo;
+  const m = {};
+  for (const p of S.data.clientes) {
+    const tot = p.m26.reduce((s, v) => s + v, 0);
+    if (!m[p.cliente] || tot > m[p.cliente]._t)
+      m[p.cliente] = { vend: p.vend, ger: p.ger, canal: p.canal || "SEM CANAL", _t: tot };
+  }
+  return (S._cliInfo = m);
+}
+/* pseudo-linhas do PRODUTO selecionado (cubo MIX produto×cliente) */
+function linhasMixProd() {
+  const info = cliInfoLookup();
+  let r = MIX.cube.prods.filter((p) => p.prod === S.fProd);
+  const mapa = (p) => info[p.cliente] || { vend: "SEM CADASTRO", ger: "SEM CADASTRO", canal: "SEM CANAL" };
+  if (S.fEstr.length) { const em = estrLookup(); r = r.filter((p) => S.fEstr.includes(em[p.cliente + "|" + mapa(p).vend] || "")); }
+  if (S.fGer) r = r.filter((p) => mapa(p).ger === S.fGer);
+  if (S.fVend) r = r.filter((p) => mapa(p).vend === S.fVend);
+  if (S.fCanal) r = r.filter((p) => mapa(p).canal === S.fCanal);
+  if (S.fCli) r = r.filter((p) => p.cliente === S.fCli);
+  return r.map((p) => ({ cliente: p.cliente, vend: mapa(p).vend, ger: mapa(p).ger, canal: mapa(p).canal,
+    m24: Z12(), m25: p.m25, m26: p.m26, q26: p.q26, meta: Z12(),
+    status: "", ult: null, perdido: 0, media: 0, meses_sem: 99 }));
+}
+/* pseudo-linhas da UF selecionada (cubo de UF do Faturamento; tem até meta por UF) */
+function linhasFatUF() {
+  const cm = canalLookup(), em = estrLookup();
+  let r = FAT.cube.clientes;
+  if (S.fEstr.length) r = r.filter((c) => S.fEstr.includes(em[c.cliente + "|" + c.vend] || ""));
+  if (S.fGer) r = r.filter((c) => c.ger === S.fGer);
+  if (S.fVend) r = r.filter((c) => c.vend === S.fVend);
+  if (S.fCanal) r = r.filter((c) => (cm[c.cliente + "|" + c.vend] || "SEM CANAL") === S.fCanal);
+  if (S.fCli) r = r.filter((c) => c.cliente === S.fCli);
+  const out = [];
+  for (const c of r) {
+    const u = c.ufs.find((x) => x.uf === S.fUF);
+    if (!u) continue;
+    out.push({ cliente: c.cliente, vend: c.vend, ger: c.ger,
+      canal: cm[c.cliente + "|" + c.vend] || "SEM CANAL",
+      m24: Z12(), m25: u.m25, m26: u.m26, q26: u.q26, meta: u.meta || Z12(),
+      status: "", ult: u.ult || null, perdido: 0, media: 0, meses_sem: 99 });
+  }
+  return out;
+}
 
 /* ---------------- render ---------------- */
 function renderAll() {
   const rows = linhas(), meses = mesesSel();
   renderChips();
-  // com filtro de CATEGORIA os números vêm do cubo MIX (pseudo-linhas)
-  const rowsK = (S.fCat && MIX.cube) ? linhasMix() : rows;
+  // com análise de categoria/produto/UF os números vêm dos cubos (pseudo-linhas)
+  const rowsK = (S.fProd && MIX.cube) ? linhasMixProd()
+    : (S.fCat && MIX.cube) ? linhasMix()
+    : (S.fUF && FAT.cube) ? linhasFatUF()
+    : rows;
   renderKpis(rowsK, meses);
   renderEvolucao(rowsK);
   renderDashRank();
-  renderSemaforo(rows);
-  renderFamilias();
   renderParados(rows);
   renderAnalitica();
   renderMetas(rows, meses);
@@ -361,8 +409,22 @@ function filtrarCanal(c) {
   S.nPos = 100; S.nCli = 50;
   renderAll();
 }
+/* categoria, produto e UF são análises mutuamente exclusivas (uma limpa as outras) */
 function filtrarCat(c) {
   S.fCat = S.fCat === c ? "" : c;
+  S.fProd = ""; S.fUF = "";
+  S.nPos = 100; S.nCli = 50;
+  renderAll();
+}
+function filtrarProd(p) {
+  S.fProd = S.fProd === p ? "" : p;
+  S.fCat = ""; S.fUF = "";
+  S.nPos = 100; S.nCli = 50;
+  renderAll();
+}
+function filtrarUF(u) {
+  S.fUF = S.fUF === u ? "" : u;
+  S.fCat = ""; S.fProd = "";
   S.nPos = 100; S.nCli = 50;
   renderAll();
 }
@@ -376,6 +438,8 @@ function renderChips() {
   if (S.fVend) f.push("Vendedor: " + nomeVend(S.fVend));
   if (S.fCanal) f.push("Canal: " + S.fCanal);
   if (S.fCat) f.push("Categoria: " + rotuloCat(S.fCat));
+  if (S.fProd) f.push("Produto: " + S.fProd);
+  if (S.fUF) f.push("UF: " + S.fUF);
   if (S.fCli) f.push("Cliente: " + S.fCli);
   $("chip-filtro").textContent = "Filtrando: " + f.join(" · ");
 }
@@ -409,7 +473,7 @@ function renderKpis(rows, meses) {
   // devolução dinâmica: soma da série d25/d26 no recorte e período (2024 não tem série)
   const dser = (p) => S.ano === 2026 ? p.d26 : S.ano === 2025 ? p.d25 : null;
   let dev = null;
-  if (!S.fCat && (S.ano === 2026 || S.ano === 2025)) {
+  if (!recorteEspecial() && (S.ano === 2026 || S.ano === 2025)) {
     dev = rows.reduce((s, p) => {
       const a = dser(p); if (!a) return s;
       return s + meses.reduce((t, m) => t + (a[m - 1] || 0), 0);
@@ -439,8 +503,8 @@ function renderKpis(rows, meses) {
     kpiCard(IC.cart, "#4f9aa0", "Pedidos<br>em carteira", filtrado() ? "—" : fmtM(k.carteira),
       filtrado() ? escT : `Qtde de pedidos: <b>${fmtBR(k.carteira_pedidos || 0)}</b>`) +
     kpiCard(IC.pos, "#8AAB83", "Clientes<br>positivados",
-      S.fCat ? "—" : `${fmtBR(positivados)}<small>/${fmtBR(base)}</small>`,
-      S.fCat ? '<span style="color:var(--soft)">sem recorte por categoria</span>'
+      recorteEspecial() ? "—" : `${fmtBR(positivados)}<small>/${fmtBR(base)}</small>`,
+      recorteEspecial() ? '<span style="color:var(--soft)">sem recorte nesta análise</span>'
              : (base ? `<b style="color:var(--teal-d)">${fmtPct(positivados / base)}</b> da base ativa (6 m)` : ""), "posit") +
     kpiCard(IC.dev, "#C96643", "Devolução", dev == null ? "—" : fmtM(dev),
       dev != null && fat > 0 ? `<b style="color:var(--bad)">${fmtPct(dev / fat)}</b> do faturamento`
@@ -609,28 +673,34 @@ function renderAnalitica() {
   const N = S.fVend ? 5 : 10;
   const top = Object.entries(porCli).sort((a, b) => b[1] - a[1]).slice(0, N).map(([n]) => n);
   const topSet = new Set(top);
-  // categoria × cliente (só o top)
-  const mapa = {};
-  for (const c of r) {
-    if (!topSet.has(c.cliente)) continue;
-    const v = val(c);
-    if (v <= 0) continue;
-    (mapa[c.cat] ??= {})[c.cliente] = ((mapa[c.cat] || {})[c.cliente] || 0) + v;
-  }
-  let ws = [];
-  for (const [cat, cls] of Object.entries(mapa)) {
-    if (rotuloCat(cat).toUpperCase() === "OUTROS") continue;
+  // 5 FOCOS FIXOS definidos pela diretoria (mistura categorias e itens), nesta ordem
+  const FOCOS = [
+    { rot: "QUERO | ENCARTELADOS", tipo: "categoria", t: "cat",
+      m: (s) => s.includes("QUERO") && s.includes("ENCARTELADO") },
+    { rot: "SAL MARINHO INTEGRAL 500G", tipo: "item", t: "prod",
+      m: (s) => s.includes("SAL MARINHO INTEGRAL") && s.includes("500G") },
+    { rot: "SAL MARINHO INTEGRAL 1KG", tipo: "item", t: "prod",
+      m: (s) => s.includes("SAL MARINHO INTEGRAL") && (s.includes("1KG") || s.includes("1 KG")) },
+    { rot: "CHURRASCO", tipo: "categoria", t: "cat", m: (s) => s.includes("CHURRASCO") },
+    { rot: "MOEDOR", tipo: "categoria", t: "cat", m: (s) => s.includes("MOEDOR") },
+  ];
+  const lista = FOCOS.map((f) => {
+    const fonte = f.t === "cat" ? r : MIX.cube.prods;
+    const cls = {};
+    for (const e of fonte) {
+      if (!topSet.has(e.cliente)) continue;
+      const nome = (f.t === "cat" ? e.cat : e.prod).toUpperCase();
+      if (!f.m(nome)) continue;
+      const v = val(e);
+      if (v > 0) cls[e.cliente] = (cls[e.cliente] || 0) + v;
+    }
     const compr = Object.values(cls);
     const sem = top.filter((n) => !(cls[n] > 0));
-    if (compr.length < 2 || !sem.length) continue;
     const ord = [...compr].sort((a, b) => a - b);
-    const giro = ord[Math.floor(ord.length / 2)];
-    ws.push({ cat, compradores: compr.length, contas_sem: sem.length,
-              giro, potencial: giro * sem.length, alvo: sem.slice(0, 6) });
-  }
-  if (S.fCat) ws = ws.filter((w) => w.cat === S.fCat);
-  ws.sort((a, b) => b.potencial - a.potencial);
-  const lista = ws.slice(0, 10);
+    const giro = ord.length ? ord[Math.floor(ord.length / 2)] : 0;
+    return { ...f, compradores: compr.length, contas_sem: sem.length,
+             giro, potencial: giro * sem.length, alvo: sem.slice(0, 6) };
+  });
   const gaps = {};
   for (const w of lista) for (const n of w.alvo) gaps[n] = (gaps[n] || 0) + 1;
   const alvo = Object.entries(gaps).sort((a, b) => b[1] - a[1]).slice(0, 8);
@@ -638,25 +708,26 @@ function renderAnalitica() {
     : S.fGer ? `top 10 clientes de ${S.fGer}` : "top 10 clientes da empresa";
   const janela = `${MESES[win[0].m - 1]}–${MESES[win[win.length - 1].m - 1]}/${String(win[win.length - 1].y).slice(2)}`;
   $("analitica-janela").textContent =
-    `${escopoTxt} · ${janela}${S.fCat ? " · categoria " + rotuloCat(S.fCat) : ""} · potencial ${fmtM(lista.reduce((s, w) => s + w.potencial, 0))}`;
+    `${escopoTxt} · ${janela} · potencial ${fmtM(lista.reduce((s, w) => s + w.potencial, 0))}`;
   const corpo = lista.map((w, i) =>
-    `<tr><td class="r"><b>${i + 1}</b></td><td><b>${esc(rotuloCat(w.cat))}</b></td>
+    `<tr><td class="r"><b>${i + 1}</b></td><td><b>${esc(w.rot)}</b>
+       <span style="color:var(--soft);font-size:9.5px;margin-left:6px">${w.tipo}</span></td>
      <td class="r">${w.compradores}</td><td class="r">${w.contas_sem}</td>
-     <td class="r">${fmtV(w.giro)}</td>
-     <td class="r"><b style="color:var(--ok)">${fmtV(w.potencial)}</b></td>
-     <td style="font-size:10.5px;color:var(--mut)">${w.alvo.map(esc).join(" · ")}</td></tr>`).join("");
+     <td class="r">${w.giro ? fmtV(w.giro) : "—"}</td>
+     <td class="r"><b style="color:var(--ok)">${w.potencial ? fmtV(w.potencial) : "—"}</b></td>
+     <td style="font-size:10.5px;color:var(--mut)">${w.alvo.length ? w.alvo.map(esc).join(" · ") : "todas compram ✓"}</td></tr>`).join("");
   $("dash-ws").innerHTML =
     `<div class="twrap"><table class="fat-tab"><thead><tr>
-      <th class="r">#</th><th>FAMÍLIA / CATEGORIA</th>
+      <th class="r">#</th><th>FOCO</th>
       <th class="r">Compram</th><th class="r">Contas s/</th><th class="r">Giro/conta</th>
-      <th class="r">Potencial</th><th>Contas-alvo (não compram a família)</th></tr></thead><tbody>` +
-    (corpo || `<tr><td colspan="7" class="empty">Sem lacunas relevantes — as contas-chave do recorte já compram tudo. 🎉</td></tr>`) +
+      <th class="r">Potencial</th><th>Contas-alvo (não compram o foco)</th></tr></thead><tbody>` +
+    corpo +
     `</tbody></table></div>
-     <div class="note">🎯 <b>Contas-alvo</b> (mais famílias em aberto):
+     <div class="note">🎯 <b>Contas-alvo</b> (mais focos em aberto):
        ${alvo.length ? alvo.map(([n, q]) => `<b>${esc(n)}</b> (${q})`).join(" · ") : "—"}.<br>
-       Potencial = giro mediano por conta compradora × contas em aberto, nos últimos 5 meses fechados.
-       Whitespace real: a conta não comprou <b>nenhuma gramatura</b> da família na janela.
-       Dinâmico: segue estrutura, gerente, vendedor, canal e categoria.</div>`;
+       Focos definidos pela diretoria. Potencial = giro mediano por conta compradora × contas em aberto,
+       nos últimos 5 meses fechados. Whitespace real: a conta não comprou <b>nenhuma gramatura</b> do foco.
+       Dinâmico: segue estrutura, gerente, vendedor e canal.</div>`;
 }
 
 /* ---------- Metas ---------- */
@@ -911,7 +982,7 @@ function renderDashRank() {
         f: (x) => `<span style="color:var(--mut);font-size:10.5px">${esc(rotuloCat(x.cat))}</span>` },
       { k: "curva", t: "ABC", v: (x) => x.curva || "—",
         f: (x) => x.curva ? `<span class="curva c-${esc(x.curva)}">${esc(x.curva)}</span>` : "—" });
-    tabelaDash("dash-prod", "prod", [...colsProd, ...colsVolBase(totVP)], prods, 30, null);
+    tabelaDash("dash-prod", "prod", [...colsProd, ...colsVolBase(totVP)], prods, 30, filtrarProd, S.fProd);
   }
 
   // Regiões do Brasil (clique filtra os estados) e Estados por nome
@@ -923,11 +994,12 @@ function renderDashRank() {
       (n) => { DASH.regSel = DASH.regSel === n ? "" : n; renderDashRank(); }, DASH.regSel);
     let ufs = dashRegioes(meses, false);
     if (DASH.regSel) ufs = ufs.filter((u) => (REGIAO_UF[u.nome] || "—") === DASH.regSel);
+    if (S.fUF) ufs = ufs.filter((u) => u.nome === S.fUF);   // isolar o estado clicado
     $("uf-info").textContent = DASH.regSel ? `região: ${DASH.regSel} (clique na região de novo para ver todos)` : "";
     const totU = ufs.reduce((s, x) => s + x.f26, 0);
     const colsUF = colsDash("ESTADO", totU);
-    colsUF[0].f = (x) => `<b>${esc(UF_NOME[x.nome] || x.nome)}</b> <span style="color:var(--soft);font-size:10px">${esc(x.nome)}</span>`;
-    tabelaDash("dash-uf", "uf", [...colsUF, colCli], ufs, 30, null);
+    colsUF[0].f = (x) => `<b>${esc((UF_NOME[x.nome] || x.nome).toUpperCase())}</b> <span style="color:var(--soft);font-size:10px">${esc(x.nome)}</span>`;
+    tabelaDash("dash-uf", "uf", [...colsUF, colCli], ufs, 30, filtrarUF, S.fUF);
   }
 }
 
@@ -984,6 +1056,10 @@ function dashCategorias(meses) {
   if (S.fCanal) r = r.filter((c) => (cm[c.cliente + "|" + c.vend] || "SEM CANAL") === S.fCanal);
   if (S.fCli) r = r.filter((c) => c.cliente === S.fCli);
   if (S.fCat) r = r.filter((c) => c.cat === S.fCat);   // isolar a categoria clicada
+  if (S.fProd) {                                        // produto clicado → mostra só a categoria dele
+    const pc = (MIX.cube.prods.find((p) => p.prod === S.fProd) || {}).cat;
+    r = r.filter((c) => c.cat === pc);
+  }
   const map = {};
   for (const c of r) {
     const g = (map[c.cat] ??= { nome: c.cat, f25: 0, f26: 0, v25: 0, v26: 0, _cli: new Set() });
@@ -1006,6 +1082,7 @@ function dashProdutos() {
     r = r.filter((p) => set.has(p.cliente));
   }
   if (S.fCat) r = r.filter((p) => p.cat === S.fCat);
+  if (S.fProd) r = r.filter((p) => p.prod === S.fProd);   // isolar o produto clicado
   const ncli = MIX.cube.ncli_prod || {};
   const map = {};
   for (const p of r) {
