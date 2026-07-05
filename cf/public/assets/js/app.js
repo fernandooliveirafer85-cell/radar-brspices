@@ -2,7 +2,7 @@
    Login: senha → SHA-256 → data/<hash>.enc.json → PBKDF2 + AES-GCM (WebCrypto). */
 "use strict";
 
-const S = { data: null, fGer: "", fVend: "", fCanal: "", fCat: "", fEstr: "", ano: 2026, meses: [],
+const S = { data: null, fGer: "", fVend: "", fCanal: "", fCat: "", fCli: "", fEstr: [], ano: 2026, meses: [],
             nPos: 100, nCli: 50, fStatus: "", busca: "", buscaMeta: "", fracMes: 1,
             numModo: localStorage.getItem("bv_num") || "detalhado" };
 const $ = (id) => document.getElementById(id);
@@ -183,10 +183,13 @@ function boot() {
   const dt = new Date(d.atualizado_ate + "T12:00:00");
   S.fracMes = dt.getDate() / new Date(dt.getFullYear(), dt.getMonth() + 1, 0).getDate();
 
-  // período: YTD (até o mês fechado) por padrão + meses com checkbox
-  S.meses = seq(1, (d.periodo.mes_atual - 1) || 1);
-  $("per-meses").innerHTML = MESES.map((m, i) =>
-    `<label class="permes"><input type="checkbox" data-mes="${i + 1}"><span>${m}</span></label>`).join("");
+  // período: MÊS ATUAL por padrão + meses com checkbox (Limpar no topo da lista)
+  S.meses = [d.periodo.mes_atual];
+  $("per-meses").innerHTML =
+    '<button type="button" class="permes-limpar" id="mes-limpar">✕ Limpar meses</button>' +
+    MESES.map((m, i) =>
+      `<label class="permes"><input type="checkbox" data-mes="${i + 1}"><span>${m}</span></label>`).join("");
+  $("mes-limpar").addEventListener("click", () => aplicarPeriodo([]));
   atualizarPerBtns();
   $("f-ano").innerHTML = `<option>2026</option><option>2025</option><option>2024</option>`;
 
@@ -240,21 +243,27 @@ function togglePerPanel(abrir) {
   p.classList.toggle("on", abrir != null ? abrir : !p.classList.contains("on"));
 }
 function periodoRapido(q) {
-  const mF = mesFechado();
-  const mapa = { mes: [mF], ytd: seq(1, mF), ano: seq(1, 12), h1: seq(1, 6), h2: seq(7, 12),
+  const mF = mesFechado(), mA = S.data.periodo.mes_atual;
+  const mapa = { mes: [mA], ytd: seq(1, mF), ano: seq(1, 12), h1: seq(1, 6), h2: seq(7, 12),
                  q1: seq(1, 3), q2: seq(4, 6), q3: seq(7, 9), q4: seq(10, 12), limpar: [] };
-  aplicarPeriodo(mapa[q] || seq(1, mF));
+  $("perq-panel").classList.remove("on");
+  aplicarPeriodo(mapa[q] || [mA]);
 }
 function filtrarEstr(e) {
-  S.fEstr = S.fEstr === e ? "" : e;
+  S.fEstr = S.fEstr.includes(e) ? S.fEstr.filter((x) => x !== e) : [...S.fEstr, e];  // múltipla seleção
   document.querySelectorAll("#estr-btns button").forEach((b) =>
-    b.classList.toggle("on", b.dataset.e === S.fEstr));
+    b.classList.toggle("on", S.fEstr.includes(b.dataset.e)));
+  S.nPos = 100; S.nCli = 50;
+  renderAll();
+}
+function filtrarCli(n) {
+  S.fCli = S.fCli === n ? "" : n;
   S.nPos = 100; S.nCli = 50;
   renderAll();
 }
 
 function limparFiltros() {
-  S.fGer = ""; S.fVend = ""; S.fCanal = ""; S.fCat = ""; S.fEstr = "";  // zera o ESTADO, não só a tela
+  S.fGer = ""; S.fVend = ""; S.fCanal = ""; S.fCat = ""; S.fCli = ""; S.fEstr = [];  // zera o ESTADO
   document.querySelectorAll("#estr-btns button").forEach((b) => b.classList.remove("on"));
   if ($("f-ger")) $("f-ger").value = "";
   if ($("f-vend")) $("f-vend").value = "";
@@ -263,7 +272,7 @@ function limparFiltros() {
   for (const id of ["busca-pos", "busca-meta", "busca-fat"]) if ($(id)) $(id).value = "";
   document.querySelectorAll(".fchip[data-st]").forEach((x) => x.classList.remove("on"));
   S.ano = 2026;
-  S.meses = seq(1, mesFechado());
+  S.meses = [S.data.periodo.mes_atual];   // padrão = mês atual
   atualizarVendSelect(); atualizarPerBtns();
   S.nPos = 100; S.nCli = 50;
   renderAll();
@@ -271,13 +280,14 @@ function limparFiltros() {
 
 function linhas() {
   let r = S.data.clientes;
-  if (S.fEstr) r = r.filter((p) => (p.estr || "") === S.fEstr);
+  if (S.fEstr.length) r = r.filter((p) => S.fEstr.includes(p.estr || ""));
   if (S.fGer) r = r.filter((p) => p.ger === S.fGer);
   if (S.fVend) r = r.filter((p) => p.vend === S.fVend);
   if (S.fCanal) r = r.filter((p) => (p.canal || "SEM CANAL") === S.fCanal);
+  if (S.fCli) r = r.filter((p) => p.cliente === S.fCli);
   return r;
 }
-const filtrado = () => !!(S.fGer || S.fVend || S.fCanal || S.fCat || S.fEstr);
+const filtrado = () => !!(S.fGer || S.fVend || S.fCanal || S.fCat || S.fEstr.length || S.fCli);
 
 /* cliente ativo = comprou em algum dos últimos 6 meses FECHADOS */
 function ativo6(p) {
@@ -303,10 +313,11 @@ function canalLookup() {
 function linhasMix() {
   const cm = canalLookup();
   let r = MIX.cube.cats.filter((c) => c.cat === S.fCat);
-  if (S.fEstr) { const em = estrLookup(); r = r.filter((c) => (em[c.cliente + "|" + c.vend] || "") === S.fEstr); }
+  if (S.fEstr.length) { const em = estrLookup(); r = r.filter((c) => S.fEstr.includes(em[c.cliente + "|" + c.vend] || "")); }
   if (S.fGer) r = r.filter((c) => c.ger === S.fGer);
   if (S.fVend) r = r.filter((c) => c.vend === S.fVend);
   if (S.fCanal) r = r.filter((c) => (cm[c.cliente + "|" + c.vend] || "SEM CANAL") === S.fCanal);
+  if (S.fCli) r = r.filter((c) => c.cliente === S.fCli);
   return r.map((c) => ({ cliente: c.cliente, vend: c.vend, ger: c.ger,
     canal: cm[c.cliente + "|" + c.vend] || "SEM CANAL",
     m24: Z12(), m25: c.m25, m26: c.m26, q26: c.q26, meta: Z12(),
@@ -358,12 +369,14 @@ function filtrarCat(c) {
 
 function renderChips() {
   $("per-btn").textContent = rotuloPer();
+  if ($("perq-btn")) $("perq-btn").textContent = rotuloPer();
   const f = [S.ano + " · " + rotuloPer()];
-  if (S.fEstr) f.push("Estrutura: " + S.fEstr);
+  if (S.fEstr.length) f.push("Estrutura: " + S.fEstr.join(" + "));
   if (S.fGer) f.push("Gerente: " + S.fGer);
   if (S.fVend) f.push("Vendedor: " + nomeVend(S.fVend));
   if (S.fCanal) f.push("Canal: " + S.fCanal);
   if (S.fCat) f.push("Categoria: " + rotuloCat(S.fCat));
+  if (S.fCli) f.push("Cliente: " + S.fCli);
   $("chip-filtro").textContent = "Filtrando: " + f.join(" · ");
 }
 /* categoria sem o prefixo numérico ("07. QUERO | FOOD" → "QUERO | FOOD") */
@@ -393,6 +406,16 @@ function renderKpis(rows, meses) {
   const ating = meta ? fat / meta : null;
   const gap = meta ? fat - meta : null;
 
+  // devolução dinâmica: soma da série d25/d26 no recorte e período (2024 não tem série)
+  const dser = (p) => S.ano === 2026 ? p.d26 : S.ano === 2025 ? p.d25 : null;
+  let dev = null;
+  if (!S.fCat && (S.ano === 2026 || S.ano === 2025)) {
+    dev = rows.reduce((s, p) => {
+      const a = dser(p); if (!a) return s;
+      return s + meses.reduce((t, m) => t + (a[m - 1] || 0), 0);
+    }, 0);
+  }
+
   const noMes = S.ano === d.periodo.ano && meses.includes(d.periodo.mes_atual);
   const positivados = noMes
     ? rows.filter((p) => p.status === "ok").length
@@ -419,8 +442,9 @@ function renderKpis(rows, meses) {
       S.fCat ? "—" : `${fmtBR(positivados)}<small>/${fmtBR(base)}</small>`,
       S.fCat ? '<span style="color:var(--soft)">sem recorte por categoria</span>'
              : (base ? `<b style="color:var(--teal-d)">${fmtPct(positivados / base)}</b> da base ativa (6 m)` : ""), "posit") +
-    kpiCard(IC.dev, "#C96643", `Devolução<br>${d.periodo.ano} YTD`, filtrado() ? "—" : fmtM(k.devolucao),
-      filtrado() ? escT : "já abatida do líquido") +
+    kpiCard(IC.dev, "#C96643", "Devolução", dev == null ? "—" : fmtM(dev),
+      dev != null && fat > 0 ? `<b style="color:var(--bad)">${fmtPct(dev / fat)}</b> do faturamento`
+                             : '<span style="color:var(--soft)">sem série p/ esta seleção</span>') +
     kpiCard(IC.vol, "#9B9741", "Volume<br>(caixas)", vol == null ? "—" : fmtNum(vol),
       ticket ? `Ticket médio <b>${fmtM(ticket)}</b>` : "Ticket médio —", "vol");
 
@@ -559,36 +583,80 @@ function renderParados(rows) {
 }
 
 /* ---------- Oportunidades nas contas-chave (whitespace, calculado no ETL) ---------- */
+/* Oportunidades DINÂMICAS: calculadas na hora a partir do cubo MIX.
+   Sem filtro = top 10 clientes da empresa; com gerente = top 10 dele; com vendedor = top 5 dele. */
 function renderAnalitica() {
   const card = $("card-analitica");
   if (!card) return;
-  const a = S.data.analitica;
-  if (!a || !(a.whitespace || []).length) { card.style.display = "none"; return; }
+  if (!MIX.cube) { card.style.display = "none"; return; }
   card.style.display = "";
-  // com uma CATEGORIA selecionada, mostra as oportunidades DAQUELA categoria (lista completa)
-  const porCat = S.fCat ? (a.whitespace_full || a.whitespace).filter((w) => w.cat === S.fCat) : null;
-  const lista = porCat ? porCat.slice(0, 10) : a.whitespace.slice(0, 10);
-  $("analitica-janela").textContent = porCat
-    ? `categoria ${rotuloCat(S.fCat)} · top 30 clientes · ${a.janela}`
-    : `top 30 clientes · ${a.janela} · potencial bruto ${fmtM(a.pot_total)}`;
+  const em = estrLookup(), cm = canalLookup();
+  let r = MIX.cube.cats;
+  if (S.fEstr.length) r = r.filter((c) => S.fEstr.includes(em[c.cliente + "|" + c.vend] || ""));
+  if (S.fGer) r = r.filter((c) => c.ger === S.fGer);
+  if (S.fVend) r = r.filter((c) => c.vend === S.fVend);
+  if (S.fCanal) r = r.filter((c) => (cm[c.cliente + "|" + c.vend] || "SEM CANAL") === S.fCanal);
+  // janela = últimos 5 meses fechados
+  const { ano, mes_atual } = S.data.periodo;
+  const base = ano * 12 + (mes_atual - 1);
+  const win = [];
+  for (let k = 5; k >= 1; k--) { const i = base - k; win.push({ y: Math.floor(i / 12), m: (i % 12) + 1 }); }
+  const val = (e) => win.reduce((s, p) =>
+    s + (((p.y === 2026 ? e.m26 : p.y === 2025 ? e.m25 : null) || [])[p.m - 1] || 0), 0);
+  // top N clientes do recorte
+  const porCli = {};
+  for (const c of r) porCli[c.cliente] = (porCli[c.cliente] || 0) + val(c);
+  const N = S.fVend ? 5 : 10;
+  const top = Object.entries(porCli).sort((a, b) => b[1] - a[1]).slice(0, N).map(([n]) => n);
+  const topSet = new Set(top);
+  // categoria × cliente (só o top)
+  const mapa = {};
+  for (const c of r) {
+    if (!topSet.has(c.cliente)) continue;
+    const v = val(c);
+    if (v <= 0) continue;
+    (mapa[c.cat] ??= {})[c.cliente] = ((mapa[c.cat] || {})[c.cliente] || 0) + v;
+  }
+  let ws = [];
+  for (const [cat, cls] of Object.entries(mapa)) {
+    if (rotuloCat(cat).toUpperCase() === "OUTROS") continue;
+    const compr = Object.values(cls);
+    const sem = top.filter((n) => !(cls[n] > 0));
+    if (compr.length < 2 || !sem.length) continue;
+    const ord = [...compr].sort((a, b) => a - b);
+    const giro = ord[Math.floor(ord.length / 2)];
+    ws.push({ cat, compradores: compr.length, contas_sem: sem.length,
+              giro, potencial: giro * sem.length, alvo: sem.slice(0, 6) });
+  }
+  if (S.fCat) ws = ws.filter((w) => w.cat === S.fCat);
+  ws.sort((a, b) => b.potencial - a.potencial);
+  const lista = ws.slice(0, 10);
+  const gaps = {};
+  for (const w of lista) for (const n of w.alvo) gaps[n] = (gaps[n] || 0) + 1;
+  const alvo = Object.entries(gaps).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  const escopoTxt = S.fVend ? `top 5 clientes de ${nomeVend(S.fVend)}`
+    : S.fGer ? `top 10 clientes de ${S.fGer}` : "top 10 clientes da empresa";
+  const janela = `${MESES[win[0].m - 1]}–${MESES[win[win.length - 1].m - 1]}/${String(win[win.length - 1].y).slice(2)}`;
+  $("analitica-janela").textContent =
+    `${escopoTxt} · ${janela}${S.fCat ? " · categoria " + rotuloCat(S.fCat) : ""} · potencial ${fmtM(lista.reduce((s, w) => s + w.potencial, 0))}`;
   const corpo = lista.map((w, i) =>
-    `<tr><td class="r"><b>${i + 1}</b></td><td><b>${esc(w.fam)}</b></td>
-     <td style="color:var(--mut);font-size:10.5px">${esc(rotuloCat(w.cat))}</td>
+    `<tr><td class="r"><b>${i + 1}</b></td><td><b>${esc(rotuloCat(w.cat))}</b></td>
      <td class="r">${w.compradores}</td><td class="r">${w.contas_sem}</td>
      <td class="r">${fmtV(w.giro)}</td>
      <td class="r"><b style="color:var(--ok)">${fmtV(w.potencial)}</b></td>
      <td style="font-size:10.5px;color:var(--mut)">${w.alvo.map(esc).join(" · ")}</td></tr>`).join("");
   $("dash-ws").innerHTML =
     `<div class="twrap"><table class="fat-tab"><thead><tr>
-      <th class="r">#</th><th>FAMÍLIA</th><th>Categoria</th>
+      <th class="r">#</th><th>FAMÍLIA / CATEGORIA</th>
       <th class="r">Compram</th><th class="r">Contas s/</th><th class="r">Giro/conta</th>
       <th class="r">Potencial</th><th>Contas-alvo (não compram a família)</th></tr></thead><tbody>` +
-    (corpo || `<tr><td colspan="8" class="empty">Sem lacunas relevantes nesta categoria — todas as contas-chave já compram. 🎉</td></tr>`) +
+    (corpo || `<tr><td colspan="7" class="empty">Sem lacunas relevantes — as contas-chave do recorte já compram tudo. 🎉</td></tr>`) +
     `</tbody></table></div>
-     <div class="note">🎯 <b>Contas-alvo</b> (mais famílias campeãs em aberto):
-       ${a.contas_alvo.map((c) => `<b>${esc(c.cliente)}</b> (${c.abertas})`).join(" · ")}.<br>
-       ${esc(a.criterio)}. Whitespace real: a conta não comprou <b>nenhuma gramatura</b> da família na janela.
-       Análise do top 30 do escopo total — segue apenas o filtro de categoria.</div>`;
+     <div class="note">🎯 <b>Contas-alvo</b> (mais famílias em aberto):
+       ${alvo.length ? alvo.map(([n, q]) => `<b>${esc(n)}</b> (${q})`).join(" · ") : "—"}.<br>
+       Potencial = giro mediano por conta compradora × contas em aberto, nos últimos 5 meses fechados.
+       Whitespace real: a conta não comprou <b>nenhuma gramatura</b> da família na janela.
+       Dinâmico: segue estrutura, gerente, vendedor, canal e categoria.</div>`;
 }
 
 /* ---------- Metas ---------- */
@@ -777,10 +845,7 @@ function renderDashRank() {
   const colUlt = { k: "ult", t: "Últ. Compra", v: (x) => x.ult ? Date.parse(x.ult) : -Infinity,
     f: (x) => { const dd = diasSemCompra(x.ult);
       return `<span${dd != null && dd > 60 ? ' style="color:var(--bad);font-weight:700"' : ""}>${fmtDataCurta(x.ult)}</span>`; } };
-  tabelaDash("dash-cli", "cli", [...colsDash("CLIENTE", totCli), colUlt], cli, 20, (n) => {
-    trocarView("fat");
-    if ($("busca-fat")) { $("busca-fat").value = n; FAT.busca = n; if (FAT.cube) desenharFat(); }
-  });
+  tabelaDash("dash-cli", "cli", [...colsDash("CLIENTE", totCli), colUlt], cli, 20, filtrarCli, S.fCli);
 
   // Gerentes (visão do gestor) → clique filtra a página
   const extra = [
@@ -912,10 +977,11 @@ const volDash = (g) => ({ ...g, crv: g.v25 > 0 ? (g.v26 - g.v25) / g.v25 : (g.v2
 function dashCategorias(meses) {
   const cm = canalLookup(), em = estrLookup();
   let r = MIX.cube.cats;
-  if (S.fEstr) r = r.filter((c) => (em[c.cliente + "|" + c.vend] || "") === S.fEstr);
+  if (S.fEstr.length) r = r.filter((c) => S.fEstr.includes(em[c.cliente + "|" + c.vend] || ""));
   if (S.fGer) r = r.filter((c) => c.ger === S.fGer);
   if (S.fVend) r = r.filter((c) => c.vend === S.fVend);
   if (S.fCanal) r = r.filter((c) => (cm[c.cliente + "|" + c.vend] || "SEM CANAL") === S.fCanal);
+  if (S.fCli) r = r.filter((c) => c.cliente === S.fCli);
   if (S.fCat) r = r.filter((c) => c.cat === S.fCat);   // isolar a categoria clicada
   const map = {};
   for (const c of r) {
@@ -929,11 +995,13 @@ function dashCategorias(meses) {
   return Object.values(map).filter((g) => g.f25 || g.f26)
     .map((g) => volDash({ ...g, ncli: g._cli.size, ...metDash(g.f25, g.f26, 0) }));
 }
-/* Produtos: cubo MIX produto×vendedor (base compradora vem pronta do ETL, por escopo) */
+/* Produtos: cubo MIX produto×CLIENTE — segue todos os filtros via conjunto de clientes do recorte */
 function dashProdutos(meses) {
   let r = MIX.cube.prods;
-  if (S.fGer) r = r.filter((p) => p.ger === S.fGer);
-  if (S.fVend) r = r.filter((p) => p.vend === S.fVend);
+  if (filtrado()) {
+    const set = new Set(linhas().map((p) => p.cliente));   // clientes do recorte atual
+    r = r.filter((p) => set.has(p.cliente));
+  }
   if (S.fCat) r = r.filter((p) => p.cat === S.fCat);
   const ncli = MIX.cube.ncli_prod || {};
   const map = {};
@@ -959,10 +1027,11 @@ const REGIAO_UF = { SP: "SUDESTE", RJ: "SUDESTE", MG: "SUDESTE", ES: "SUDESTE",
 function dashRegioes(meses, porRegiao) {
   const cm = canalLookup(), em = estrLookup();
   let r = FAT.cube.clientes;
-  if (S.fEstr) r = r.filter((c) => (em[c.cliente + "|" + c.vend] || "") === S.fEstr);
+  if (S.fEstr.length) r = r.filter((c) => S.fEstr.includes(em[c.cliente + "|" + c.vend] || ""));
   if (S.fGer) r = r.filter((c) => c.ger === S.fGer);
   if (S.fVend) r = r.filter((c) => c.vend === S.fVend);
   if (S.fCanal) r = r.filter((c) => (cm[c.cliente + "|" + c.vend] || "SEM CANAL") === S.fCanal);
+  if (S.fCli) r = r.filter((c) => c.cliente === S.fCli);
   const map = {};
   for (const c of r) for (const u of c.ufs) {
     const chave = porRegiao ? (REGIAO_UF[u.uf] || "—") : u.uf;
@@ -1348,7 +1417,7 @@ function agregarPorBandeira(linhas) {
 /* filtra por gerente/vendedor, agrega por bandeira e calcula métricas + TOTAL do escopo */
 function calcFat() {
   let linhas = FAT.cube.clientes;
-  if (S.fEstr) { const em = estrLookup(); linhas = linhas.filter((c) => (em[c.cliente + "|" + c.vend] || "") === S.fEstr); }
+  if (S.fEstr.length) { const em = estrLookup(); linhas = linhas.filter((c) => S.fEstr.includes(em[c.cliente + "|" + c.vend] || "")); }
   if (S.fGer) linhas = linhas.filter((c) => c.ger === S.fGer);
   if (S.fVend) linhas = linhas.filter((c) => c.vend === S.fVend);
   if (S.fCanal) { const cm = canalLookup(); linhas = linhas.filter((c) => (cm[c.cliente + "|" + c.vend] || "SEM CANAL") === S.fCanal); }
@@ -1489,10 +1558,12 @@ document.addEventListener("DOMContentLoaded", () => {
   $("who-sair").addEventListener("click", sair);
   document.querySelector(".navgrp-h").addEventListener("click", () => $("grp-vc").classList.toggle("open"));
 
-  // período (multi-seleção)
-  $("per-btn").addEventListener("click", (e) => { e.stopPropagation(); togglePerPanel(); });
+  // período (multi-seleção de meses + janela de períodos rápidos)
+  $("per-btn").addEventListener("click", (e) => { e.stopPropagation(); $("perq-panel").classList.remove("on"); togglePerPanel(); });
   $("per-panel").addEventListener("click", (e) => e.stopPropagation());
-  document.addEventListener("click", () => togglePerPanel(false));
+  $("perq-btn").addEventListener("click", (e) => { e.stopPropagation(); togglePerPanel(false); $("perq-panel").classList.toggle("on"); });
+  $("perq-panel").addEventListener("click", (e) => e.stopPropagation());
+  document.addEventListener("click", () => { togglePerPanel(false); $("perq-panel").classList.remove("on"); });
   $("per-meses").addEventListener("change", (e) => {
     const m = e.target.dataset.mes; if (!m) return;
     const n = +m;

@@ -262,6 +262,7 @@ def main():
             g = groups[k] = {"cliente": band, "vend": vend, "ger": ger, "canal": "",
                              "ufs": set(), "cnpjs": set(), "ult": None,
                              "m24": [0.0] * 12, "m25": [0.0] * 12, "m26": [0.0] * 12,
+                             "d25": [0.0] * 12, "d26": [0.0] * 12,
                              "q26": [0.0] * 12, "meta": [0.0] * 12, "uf_det": {}}
         if uf:
             g["ufs"].add(uf)
@@ -277,6 +278,11 @@ def main():
         g[f"m{a % 100}"][m - 1] += float(v)
         if a in (2025, 2026):
             g["uf_det"].setdefault(uf_de(cnpj), novo_ud())[f"m{a % 100}"][m - 1] += float(v)
+    # devolução mensal por grupo (p/ card Devolução dinâmico)
+    for (cnpj, ano, mes), v in dmes.items():
+        a, m = int(ano), int(mes)
+        if a in (2025, 2026):
+            grupo(cnpj)[f"d{a % 100}"][m - 1] += float(v)
     for (cnpj, ano, mes), v in qmes.items():
         g = grupo(cnpj); a, m = int(ano), int(mes)
         if a == 2026:
@@ -326,6 +332,7 @@ def main():
             "perdido": round(media * meses_sem, 2) if meses_sem >= 1 and media > 0 else 0,
             "m24": [round(v) for v in g["m24"]], "m25": [round(v) for v in g["m25"]],
             "m26": [round(v) for v in g["m26"]], "q26": [round(v, 1) for v in g["q26"]],
+            "d25": [round(v) for v in g["d25"]], "d26": [round(v) for v in g["d26"]],
             "meta": [round(v) for v in g["meta"]],
         }
         # cubo de faturamento por UF (servido sob demanda p/ a página Faturamento)
@@ -385,19 +392,31 @@ def main():
         for (cnpj, cat, ano, mes), r in gd.iterrows():
             mix_add(cnpj, cat, int(ano), int(mes), float(r["TOTAL"]), float(r["QUANTIDADE"]), -1)
 
-    # produtos × vendedor (mensal)
+    # produtos × CLIENTE-BANDEIRA (mensal) — permite análise de produto por cliente
     prod_rows = {}
-    gp = f2.groupby(["VEND", "GER", "PID", "PRODP", "CAT", "CURVA", "ANO", "MES"])[["TOTAL", "QUANTIDADE"]].sum()
-    for (vend, ger, pid, prodp, cat, curva, ano, mes), r in gp.iterrows():
-        k = (vend, pid)
+
+    def prod_add(band, pid, prodp, cat, curva, ano, mes, val, qtd, sinal):
+        k = (band, pid)
         e = prod_rows.get(k)
         if e is None:
-            e = prod_rows[k] = {"vend": vend, "ger": ger, "prod": prodp or f"ID {pid}",
+            e = prod_rows[k] = {"cliente": band, "prod": prodp or f"ID {pid}",
                                 "cat": cat, "curva": curva,
                                 "m25": [0.0] * 12, "m26": [0.0] * 12,
                                 "q25": [0.0] * 12, "q26": [0.0] * 12}
-        e[f"m{int(ano) % 100}"][int(mes) - 1] += float(r["TOTAL"])
-        e[f"q{int(ano) % 100}"][int(mes) - 1] += float(r["QUANTIDADE"])
+        e[f"m{ano % 100}"][mes - 1] += sinal * val
+        e[f"q{ano % 100}"][mes - 1] += sinal * qtd
+
+    gp = f2.groupby(["BAND", "PID", "PRODP", "CAT", "CURVA", "ANO", "MES"])[["TOTAL", "QUANTIDADE"]].sum()
+    for (band, pid, prodp, cat, curva, ano, mes), r in gp.iterrows():
+        prod_add(band, pid, prodp, cat, curva, int(ano), int(mes),
+                 float(r["TOTAL"]), float(r["QUANTIDADE"]), 1)
+    if tem_dev_prod:
+        dev["BAND"] = dev["CNPJ_N"].map(lambda c: dim.get(c, ("(DESCONHECIDO)",) * 4)[0])
+        gdp = dev[dev["ANO"].isin([2025, 2026])].groupby(["BAND", "PID", "ANO", "MES"])[["TOTAL", "QUANTIDADE"]].sum()
+        for (band, pid, ano, mes), r in gdp.iterrows():
+            pi = pinfo(pid)
+            prod_add(band, pid, pi[2], pi[0] or "OUTROS", pi[3], int(ano), int(mes),
+                     float(r["TOTAL"]), float(r["QUANTIDADE"]), -1)
 
     arr = lambda v: [round(x) for x in v]
     arrq = lambda v: [round(x, 1) for x in v]
@@ -405,7 +424,7 @@ def main():
                  "m25": arr(e["m25"]), "m26": arr(e["m26"]),
                  "q25": arrq(e["q25"]), "q26": arrq(e["q26"])}
                 for e in mix_rows.values() if any(e["m25"]) or any(e["m26"])]
-    mix_prods = [{**{k: e[k] for k in ("vend", "ger", "prod", "cat", "curva")},
+    mix_prods = [{**{k: e[k] for k in ("cliente", "prod", "cat", "curva")},
                   "m25": arr(e["m25"]), "m26": arr(e["m26"]),
                   "q25": arrq(e["q25"]), "q26": arrq(e["q26"])}
                  for e in prod_rows.values() if any(e["m25"]) or any(e["m26"])]
@@ -533,15 +552,15 @@ def main():
             fat_cube = {"mes_atual": mes_atual,
                         "clientes": [t[2] for t in cls]}
             fat_entries[kv_key] = json.dumps(fat_cube, ensure_ascii=False, separators=(",", ":"))
-            # cubo mix (categorias × cliente + produtos × vendedor) do escopo
+            # cubo mix (categorias × cliente + produtos × cliente) do escopo
+            bands_escopo = {t[0]["cliente"] for t in cls}
             if filtro is None:
                 mc, mp = mix_cats, mix_prods
             else:
                 campo, valor = filtro
                 mc = [e for e in mix_cats if e[campo] == valor]
-                mp = [e for e in mix_prods if e[campo] == valor]
+                mp = [e for e in mix_prods if e["cliente"] in bands_escopo]
             # base compradora por produto (bandeiras do ESCOPO comprando nos últimos 6 meses fechados)
-            bands_escopo = {t[0]["cliente"] for t in cls}
             ncli_prod = {p: len(bs & bands_escopo) for p, bs in prod_cli6.items()
                          if len(bs & bands_escopo)}
             mix_entries[kv_key] = json.dumps({"mes_atual": mes_atual, "cats": mc, "prods": mp,

@@ -113,7 +113,8 @@ main{margin-left:230px;padding:22px 24px 66px;max-width:1400px}
 
 /* filtros compactos: barra FINA, rótulo ao lado do campo */
 .topbar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;background:var(--card);
-  border:1px solid var(--line);border-radius:10px;padding:5px 8px;margin-bottom:4px;box-shadow:var(--shadow)}
+  border:1px solid var(--line);border-radius:10px;padding:5px 8px;margin-bottom:4px;box-shadow:var(--shadow);
+  position:sticky;top:10px;z-index:36}   /* barra congelada ao rolar */
 .f{display:flex;align-items:center;gap:5px}
 .f label{font-size:9.5px;color:var(--soft);letter-spacing:.05em;text-transform:uppercase;font-weight:700}
 .f select,.perbtn{background:#f6f8f8;color:var(--txt);border:1px solid var(--line);border-radius:7px;
@@ -127,12 +128,14 @@ main{margin-left:230px;padding:22px 24px 66px;max-width:1400px}
 .filtro-linha{text-align:right;min-height:15px;margin:0 4px 12px 0}
 #chip-filtro{font-size:11px;font-style:italic;color:var(--mut)}
 
-/* estrutura BRS / KHC / HÍBRIDO (1º nível da hierarquia) */
-.estr{display:flex;gap:0;border:1px solid var(--line);border-radius:7px;overflow:hidden}
-.estr button{background:#f6f8f8;border:none;border-right:1px solid var(--line);color:var(--mut);
-  width:52px;height:24px;font-size:10px;font-weight:700;cursor:pointer;letter-spacing:.02em}
+/* estrutura BRS / KHC / HÍBRIDO (1º nível da hierarquia; fica no rodapé; seleção múltipla) */
+.estr{display:flex;gap:0;border:1px solid rgba(255,255,255,.35);border-radius:7px;overflow:hidden;
+  margin-left:14px}
+.estr button{background:rgba(255,255,255,.08);border:none;border-right:1px solid rgba(255,255,255,.35);
+  color:rgba(255,255,255,.8);width:58px;height:24px;font-size:10px;font-weight:700;cursor:pointer;
+  letter-spacing:.02em}
 .estr button:last-child{border-right:0}
-.estr button:hover{color:var(--teal-d)}
+.estr button:hover{color:#fff}
 .estr button.on{background:linear-gradient(180deg,var(--aqua),var(--teal-d));color:#fff}
 
 /* seletor de meses (dropdown) + botões de período inline */
@@ -146,7 +149,10 @@ main{margin-left:230px;padding:22px 24px 66px;max-width:1400px}
 .perquick button{background:#f2f5f5;border:1px solid var(--line);color:var(--mut);border-radius:20px;
   padding:0 5px;height:21px;font-size:9.5px;font-weight:700;cursor:pointer}
 .perquick button:hover{border-color:var(--teal);color:var(--teal-d)}
-.permeses{display:flex;flex-direction:column;gap:1px;max-height:216px;overflow-y:auto}
+.permeses{display:flex;flex-direction:column;gap:1px;max-height:250px;overflow-y:auto}
+.permes-limpar{background:#f2f5f5;border:1px solid var(--line);color:var(--bad);border-radius:7px;
+  padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;margin-bottom:5px;text-align:left}
+.permes-limpar:hover{border-color:var(--bad)}
 .permes{display:flex;align-items:center;gap:8px;padding:4px 6px;border-radius:6px;font-size:12px;
   color:var(--txt);cursor:pointer;text-transform:capitalize}
 .permes:hover{background:#f2f5f5}
