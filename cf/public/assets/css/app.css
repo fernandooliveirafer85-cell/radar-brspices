@@ -238,6 +238,10 @@ h2.pg::before{content:"";width:9px;height:9px;background:var(--teal);transform:r
   overflow:hidden;text-overflow:ellipsis}
 .vol-tab th.vufh{font-size:8.5px;padding:3px 5px;text-align:center;background:rgba(47,125,124,.85)}
 #vol-info .fchip{cursor:pointer}
+.vfoto{height:26px;border-radius:4px;display:inline-block;vertical-align:middle}
+.vol-tab tr.vol-sum td{background:#eef4f6;font-size:9px;font-weight:700;text-align:center;
+  color:var(--teal-d);padding:3px 4px}
+.vol-tab tr.vol-sum td.volfix{background:#e4eef0;text-align:left;font-size:9.5px}
 
 /* selo da curva de vendas — padrão de cores oficial da empresa (A→D azuis, DELIST vermelho) */
 .curva{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;

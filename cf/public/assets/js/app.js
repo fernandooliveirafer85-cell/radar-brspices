@@ -1951,8 +1951,23 @@ function carregarCurvaOficial() {
   if (CURVA.oficial !== undefined || !curvaLiberada()) return;
   CURVA.oficial = null;
   fetch("/api/curva", { cache: "no-store" }).then((r) => r.ok ? r.json() : null)
-    .then((j) => { if (j) { CURVA.oficial = j; renderCurva(); } })
+    .then((j) => {
+      if (!j) return;
+      CURVA.oficial = j;
+      renderCurva();
+      if ($("v-vol").classList.contains("on")) renderVol();   // a matriz usa a ordem/linhas da base
+    })
     .catch(() => {});
+}
+/* miniatura das fotos do Excel (reduz p/ 26px de altura, JPEG leve) */
+async function miniatura(buf, ext) {
+  const blob = new Blob([buf], { type: "image/" + (ext === "jpg" ? "jpeg" : (ext || "png")) });
+  const bmp = await createImageBitmap(blob);
+  const h = 26, w = Math.max(1, Math.round(bmp.width * h / bmp.height));
+  const cv = document.createElement("canvas");
+  cv.width = w; cv.height = h;
+  cv.getContext("2d").drawImage(bmp, 0, 0, w, h);
+  return cv.toDataURL("image/jpeg", 0.72);
 }
 function renderCurvaOficial() {
   const reg = CURVA.oficial;
@@ -2001,6 +2016,7 @@ async function processarUploadCurva(file) {
           else if (m.rkgGeral == null && (v.includes("RKG") || v.includes("RANKING"))) m.rkgGeral = i;  // reserva
           else if (m.curva == null && v.startsWith("CURVA")) m.curva = i;
           else if (m.grupo == null && v.includes("GRUPO")) m.grupo = i;   // GRUPO DE REVISÃO
+          else if (m.ean == null && v.includes("EAN")) m.ean = i;
           else if (m.linha == null && v.includes("LINHA") && !v.includes("RKG") && !v.includes("RANKING"))
             m.linha = i;                                                   // LINHA PRODUTOS
           else if (m.acao == null && (v.includes("MIX") || v.includes("PRIORIT"))) m.acao = i;
@@ -2009,6 +2025,16 @@ async function processarUploadCurva(file) {
       }
     });
     if (!hdr || m.item == null) throw new Error("não encontrei a coluna do ITEM/PRODUTO no arquivo");
+    // FOTOS: extrai as imagens ancoradas em cada linha e vira miniatura
+    const fotosPorLinha = {};
+    try {
+      for (const img of (ws.getImages() || [])) {
+        const rowN = Math.round(img.range.tl.nativeRow) + 1;
+        if (fotosPorLinha[rowN]) continue;
+        const med = wb.getImage(img.imageId);
+        if (med && med.buffer) fotosPorLinha[rowN] = await miniatura(med.buffer, med.extension);
+      }
+    } catch (eImg) { /* planilha sem fotos — segue sem elas */ }
     const itens = [];
     ws.eachRow((row, n) => {
       if (n <= hdr) return;
@@ -2028,6 +2054,8 @@ async function processarUploadCurva(file) {
         curva: curvaNorm(cel(m.curva)),
         grupo: cel(m.grupo).toUpperCase(),
         linha: cel(m.linha).toUpperCase(),
+        ean: cel(m.ean).replace(/\D/g, ""),
+        foto: fotosPorLinha[n] || "",
         acao: cel(m.acao).toUpperCase() });
     });
     if (!itens.length) throw new Error("nenhuma linha de item encontrada abaixo do cabeçalho");
@@ -2215,6 +2243,7 @@ function renderVol() {
   // ITENS: ordem FIXA do MIX PADRÃO (base oficial) quando existir; senão catálogo por categoria
   const oficial = CURVA.oficial && CURVA.oficial.itens && CURVA.oficial.itens.length ? CURVA.oficial.itens : null;
   let itens;
+  const idsCat = MIX.cube.ids || {};
   if (oficial) {
     const vistos = new Set();
     itens = oficial.filter((o) => {
@@ -2222,16 +2251,25 @@ function renderVol() {
       if (vistos.has(K)) return false;
       vistos.add(K);
       return true;
-    }).map((o) => ({ item: o.item, K: String(o.item).toUpperCase(),
-      linha: o.linha || rotuloCat((pInfo[String(o.item).toUpperCase()] || {}).cat || ""),
-      curva: o.curva || (pInfo[String(o.item).toUpperCase()] || {}).curva || "",
-      grupo: o.grupo || "" }));
+    }).map((o) => {
+      const K = String(o.item).toUpperCase();
+      const idc = idsCat[o.item] || {};
+      return { item: o.item, K,
+        linha: o.linha || rotuloCat((pInfo[K] || {}).cat || ""),
+        curva: o.curva || (pInfo[K] || {}).curva || "",
+        grupo: o.grupo || "", rkg: o.rkg,
+        sku: o.id || idc.id || "", ean: o.ean || idc.ean || "", foto: o.foto || "" };
+    });
   } else {
     const gl0 = grupoLookup();
-    itens = Object.entries(pInfo).map(([K, i]) => ({ item: K, K,
-      linha: rotuloCat(i.cat), curva: i.curva, grupo: gl0 ? (gl0[K] || "") : "" }))
-      .sort((a, b) => a.linha.localeCompare(b.linha, "pt-BR") || a.item.localeCompare(b.item, "pt-BR"));
+    itens = Object.entries(pInfo).map(([K, i]) => {
+      const idc = idsCat[K] || {};
+      return { item: K, K, linha: rotuloCat(i.cat), curva: i.curva,
+        grupo: gl0 ? (gl0[K] || "") : "", rkg: null,
+        sku: idc.id || "", ean: idc.ean || "", foto: "" };
+    }).sort((a, b) => a.linha.localeCompare(b.linha, "pt-BR") || a.item.localeCompare(b.item, "pt-BR"));
   }
+  const temFoto = itens.some((i) => i.foto);
 
   // janela de LINHAS (checkboxes) — nomes vindos da estrutura atual
   const linhasNomes = [...new Set(itens.map((i) => i.linha).filter(Boolean))];
@@ -2306,7 +2344,12 @@ function renderVol() {
   };
 
   // cabeçalho em 2 linhas: cliente (agrupa e expande) / UF
-  let th1 = `<th class="volfix" rowspan="2">LINHA · PRODUTO</th><th class="r" rowspan="2">TOTAL</th>`;
+  const extras = (temFoto ? 1 : 0) + 4;   // [foto] + sku + ean + rkg + total
+  let th1 = `<th class="volfix" rowspan="2">LINHA · PRODUTO</th>` +
+    (temFoto ? `<th rowspan="2">FOTO</th>` : "") +
+    `<th class="r" rowspan="2">SKU</th><th class="r" rowspan="2">EAN</th>` +
+    `<th class="r" rowspan="2" title="ranking de vendas por linha (base oficial)">RKG</th>` +
+    `<th class="r" rowspan="2">TOTAL</th>`;
   let th2 = "";
   for (const c of clis) {
     const ufs = Object.keys(cliUFs[c]);
@@ -2320,9 +2363,19 @@ function renderVol() {
     else th2 += `<th class="r vufh">${!multi ? esc(ufs[0] || "") : "Σ " + ufs.length + " UF"}</th>`;
   }
 
-  let corpo = "";
+  // linhas de RESUMO por cliente (como no MIX PADRÃO: contagens no topo)
+  const contaCol = (col, filtro) => itens.filter((it) =>
+    (!filtro || filtro(it)) && cel[it.K + "|" + col.c + "|" + col.u]).length;
+  const linhaResumo = (rot, filtro) =>
+    `<tr class="vol-sum"><td class="volfix"><b>${rot}</b></td><td colspan="${extras}"></td>` +
+    colunas.map((col) => `<td>${fmtBR(contaCol(col, filtro))}</td>`).join("") + "</tr>";
+  let corpo =
+    linhaResumo("QTDE DE ITENS →", null) +
+    linhaResumo("CURVA A DE VENDAS →", (it) => curvaNorm(it.curva) === "A") +
+    linhaResumo("INOVAÇÕES →", (it) => ehLancamento(it.curva)) +
+    linhaResumo("QUERO →", (it) => String(it.linha).toUpperCase().includes("QUERO"));
+
   for (const it of itens) {
-    const totIt = cel[it.K + "|"] ? 0 : colunas.reduce((s, col) => s + ((cel[it.K + "|" + col.c + "|" + col.u] || {}).cx || 0), 0);
     it._max = Math.max(1, ...colunas.map((col) => {
       const o = cel[it.K + "|" + col.c + "|" + col.u];
       return o ? (VOL.metrica === "val" ? o.vl : o.cx) : 0;
@@ -2334,13 +2387,17 @@ function renderVol() {
     }, { cx: 0, vl: 0 });
     corpo += `<tr class="vol-prod">
       <td class="volfix"><span class="vlinha" style="background:${corLinha(it.linha)}">${esc(it.linha || "—")}</span>
-        ${it.curva ? seloCurva(it.curva) + " " : ""}${esc(it.item)}</td>
+        ${it.curva ? seloCurva(it.curva) + " " : ""}${esc(it.item)}</td>` +
+      (temFoto ? `<td style="text-align:center">${it.foto ? `<img class="vfoto" src="${it.foto}" alt="">` : ""}</td>` : "") +
+      `<td class="r" style="font-size:10px">${esc(it.sku || "—")}</td>
+      <td class="r" style="font-size:9.5px;color:var(--mut)">${esc(it.ean || "—")}</td>
+      <td class="r">${it.rkg ?? "—"}</td>
       <td class="r">${VOL.metrica === "sn" ? fmtBR(colunas.filter((col) => cel[it.K + "|" + col.c + "|" + col.u]).length) :
         VOL.metrica === "share" ? "—" : (VOL.metrica === "cx" ? fmtBR(totObj.cx, 0) : fmtV(totObj.vl))}</td>` +
       colunas.map((col) => celula(it, col)).join("") + "</tr>";
   }
   // TOTAL por coluna
-  corpo += `<tr class="fat-total"><td class="volfix" style="background:var(--ink)"><b>TOTAL</b></td><td class="r"></td>` +
+  corpo += `<tr class="fat-total"><td class="volfix" style="background:var(--ink)"><b>TOTAL</b></td><td colspan="${extras}" class="r"></td>` +
     colunas.map((col) => {
       if (VOL.metrica === "sn") {
         const n = itens.filter((it) => cel[it.K + "|" + col.c + "|" + col.u]).length;
