@@ -2015,13 +2015,15 @@ async function processarUploadCurva(file) {
           else if ((v.includes("RKG") || v.includes("RANKING")) && v.includes("LINHA")) m.rkg = i;      // prioridade
           else if (m.rkgGeral == null && (v.includes("RKG") || v.includes("RANKING"))) m.rkgGeral = i;  // reserva
           else if (m.curva == null && v.startsWith("CURVA")) m.curva = i;
-          else if (m.grupo == null && v.includes("GRUPO")) m.grupo = i;   // GRUPO DE REVISÃO
+          else if (v.includes("GRUPO") && v.includes("REVIS")) m.grupoRev = i;  // GRUPO REVISÃO (prioridade)
+          else if (m.grupo == null && v.includes("GRUPO")) m.grupo = i;
           else if (m.ean == null && v.includes("EAN")) m.ean = i;
           else if (m.linha == null && v.includes("LINHA") && !v.includes("RKG") && !v.includes("RANKING"))
             m.linha = i;                                                   // LINHA PRODUTOS
           else if (m.acao == null && (v.includes("MIX") || v.includes("PRIORIT"))) m.acao = i;
         });
-        if (m.rkg == null) m.rkg = m.rkgGeral;   // sem coluna "por linha", usa o RKG que houver
+        if (m.rkg == null) m.rkg = m.rkgGeral;      // sem coluna "por linha", usa o RKG que houver
+        if (m.grupoRev != null) m.grupo = m.grupoRev; // GRUPO REVISÃO manda sobre outros "grupo"
       }
     });
     if (!hdr || m.item == null) throw new Error("não encontrei a coluna do ITEM/PRODUTO no arquivo");
@@ -2322,32 +2324,32 @@ function renderVol() {
     else colunas.push({ c, u: ufs.length === 1 ? ufs[0] : "*" });
   }
 
-  const fmtCel = { cx: (o) => fmtBR(o.cx, 0), val: (o) => fmtV(o.vl),
-    sn: () => "", share: () => "" }[VOL.metrica];
+  // células: VERDE quando o cliente compra o item, VERMELHO quando não — em todas as métricas
   const celula = (it, col) => {
     const o = cel[it.K + "|" + col.c + "|" + col.u];
+    if (!o) return VOL.metrica === "sn" ? '<td class="vsn n">NÃO</td>' : '<td class="vzn">·</td>';
     const tot = colTot[col.c + "|" + col.u] || 0;
-    const share = o && tot ? o.cx / tot : 0;
-    const tip = o ? `${esc(col.c)}${col.u !== "*" ? " · " + esc(col.u) : ""} × ${esc(it.item)}: ` +
-      `${fmtBR(o.cx, 0)} cx · ${fmtV(o.vl)} · share ${fmtBR(share * 100, 1)}%` : "";
-    if (VOL.metrica === "sn")
-      return o ? `<td class="vsn s" title="${tip}">SIM</td>` : '<td class="vsn n">NÃO</td>';
-    if (!o) return '<td class="vz">·</td>';
-    if (VOL.metrica === "share") {
-      const a = 0.08 + 0.6 * Math.min(1, share * 3);
-      return `<td class="r vc" style="background:rgba(47,125,124,${a.toFixed(2)})" title="${tip}">${fmtBR(share * 100, share >= 0.1 ? 0 : 1)}%</td>`;
+    const share = tot ? o.cx / tot : 0;
+    const tip = `${esc(col.c)}${col.u !== "*" ? " · " + esc(col.u) : ""} × ${esc(it.item)}: ` +
+      `${fmtBR(o.cx, 0)} cx · ${fmtV(o.vl)} · share ${fmtBR(share * 100, 1)}%`;
+    if (VOL.metrica === "sn") return `<td class="vsn s" title="${tip}">SIM</td>`;
+    let texto, ratio;
+    if (VOL.metrica === "share") { texto = fmtBR(share * 100, share >= 0.1 ? 0 : 1) + "%"; ratio = Math.min(1, share * 3); }
+    else {
+      const base = VOL.metrica === "cx" ? o.cx : o.vl;
+      texto = VOL.metrica === "cx" ? fmtBR(o.cx, 0) : fmtV(o.vl);
+      ratio = Math.min(1, base / (it._max || 1));
     }
-    const base = VOL.metrica === "cx" ? o.cx : o.vl;
-    const max = it._max || 1;
-    const a = 0.08 + 0.55 * Math.min(1, base / max);
-    return `<td class="r vc" style="background:rgba(47,125,124,${a.toFixed(2)})" title="${tip}">${fmtCel(o)}</td>`;
+    const a = 0.12 + 0.42 * ratio;
+    return `<td class="vcg" style="background:rgba(46,158,99,${a.toFixed(2)})" title="${tip}">${texto}</td>`;
   };
 
   // cabeçalho em 2 linhas: cliente (agrupa e expande) / UF
-  const extras = (temFoto ? 1 : 0) + 4;   // [foto] + sku + ean + rkg + total
+  const extras = (temFoto ? 1 : 0) + 5;   // [foto] + sku + ean + curva + rkg + total
   let th1 = `<th class="volfix" rowspan="2">LINHA · PRODUTO</th>` +
     (temFoto ? `<th rowspan="2">FOTO</th>` : "") +
     `<th class="r" rowspan="2">SKU</th><th class="r" rowspan="2">EAN</th>` +
+    `<th rowspan="2" style="text-align:center">CURVA</th>` +
     `<th class="r" rowspan="2" title="ranking de vendas por linha (base oficial)">RKG</th>` +
     `<th class="r" rowspan="2">TOTAL</th>`;
   let th2 = "";
@@ -2363,18 +2365,7 @@ function renderVol() {
     else th2 += `<th class="r vufh">${!multi ? esc(ufs[0] || "") : "Σ " + ufs.length + " UF"}</th>`;
   }
 
-  // linhas de RESUMO por cliente (como no MIX PADRÃO: contagens no topo)
-  const contaCol = (col, filtro) => itens.filter((it) =>
-    (!filtro || filtro(it)) && cel[it.K + "|" + col.c + "|" + col.u]).length;
-  const linhaResumo = (rot, filtro) =>
-    `<tr class="vol-sum"><td class="volfix"><b>${rot}</b></td><td colspan="${extras}"></td>` +
-    colunas.map((col) => `<td>${fmtBR(contaCol(col, filtro))}</td>`).join("") + "</tr>";
-  let corpo =
-    linhaResumo("QTDE DE ITENS →", null) +
-    linhaResumo("CURVA A DE VENDAS →", (it) => curvaNorm(it.curva) === "A") +
-    linhaResumo("INOVAÇÕES →", (it) => ehLancamento(it.curva)) +
-    linhaResumo("QUERO →", (it) => String(it.linha).toUpperCase().includes("QUERO"));
-
+  let corpo = "";
   for (const it of itens) {
     it._max = Math.max(1, ...colunas.map((col) => {
       const o = cel[it.K + "|" + col.c + "|" + col.u];
@@ -2387,10 +2378,11 @@ function renderVol() {
     }, { cx: 0, vl: 0 });
     corpo += `<tr class="vol-prod">
       <td class="volfix"><span class="vlinha" style="background:${corLinha(it.linha)}">${esc(it.linha || "—")}</span>
-        ${it.curva ? seloCurva(it.curva) + " " : ""}${esc(it.item)}</td>` +
+        ${esc(it.item)}</td>` +
       (temFoto ? `<td style="text-align:center">${it.foto ? `<img class="vfoto" src="${it.foto}" alt="">` : ""}</td>` : "") +
       `<td class="r" style="font-size:10px">${esc(it.sku || "—")}</td>
       <td class="r" style="font-size:9.5px;color:var(--mut)">${esc(it.ean || "—")}</td>
+      <td style="text-align:center">${it.curva ? seloCurva(it.curva) : "—"}</td>
       <td class="r">${it.rkg ?? "—"}</td>
       <td class="r">${VOL.metrica === "sn" ? fmtBR(colunas.filter((col) => cel[it.K + "|" + col.c + "|" + col.u]).length) :
         VOL.metrica === "share" ? "—" : (VOL.metrica === "cx" ? fmtBR(totObj.cx, 0) : fmtV(totObj.vl))}</td>` +
