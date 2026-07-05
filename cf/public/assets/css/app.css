@@ -116,11 +116,11 @@ main{margin-left:230px;padding:22px 24px 66px;max-width:1400px}
   border:1px solid var(--line);border-radius:10px;padding:5px 8px;margin-bottom:4px;box-shadow:var(--shadow);
   position:sticky;top:10px;z-index:36}   /* barra congelada ao rolar */
 .f{display:flex;align-items:center;gap:5px}
-.f label{font-size:9.5px;color:var(--soft);letter-spacing:.05em;text-transform:uppercase;font-weight:700}
+.f label{font-size:9.5px;color:var(--soft);letter-spacing:.05em;text-transform:uppercase;font-weight:650}
 .f select,.perbtn{background:#f6f8f8;color:var(--txt);border:1px solid var(--line);border-radius:7px;
   padding:3px 7px;font-size:10.5px;font-weight:500;height:24px;cursor:pointer}
 .f select{min-width:60px;max-width:132px}
-.f select option{font-size:11px;font-weight:400}
+.f select option,select option{font-size:11px;font-weight:500;padding:3px 8px;color:var(--txt)}
 .reset{background:none;border:1px solid var(--line);color:var(--mut);border-radius:7px;
   padding:0 10px;height:24px;font-size:11px;cursor:pointer;font-weight:600}
 .reset:hover{color:var(--bad);border-color:var(--bad)}
@@ -147,16 +147,19 @@ main{margin-left:230px;padding:22px 24px 66px;max-width:1400px}
 .perpanel.on{display:block}
 .perquick{display:flex;flex-wrap:wrap;gap:3px}
 .perquick button{background:#f2f5f5;border:1px solid var(--line);color:var(--mut);border-radius:20px;
-  padding:0 5px;height:21px;font-size:9.5px;font-weight:700;cursor:pointer}
+  padding:0 5px;height:21px;font-size:9.5px;font-weight:600;cursor:pointer}
 .perquick button:hover{border-color:var(--teal);color:var(--teal-d)}
 .permeses{display:flex;flex-direction:column;gap:1px;max-height:250px;overflow-y:auto}
 .permes-limpar{background:#f2f5f5;border:1px solid var(--line);color:var(--bad);border-radius:7px;
-  padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;margin-bottom:5px;text-align:left}
+  padding:3px 8px;font-size:10.5px;font-weight:600;cursor:pointer;margin-bottom:5px;text-align:left}
 .permes-limpar:hover{border-color:var(--bad)}
-.permes{display:flex;align-items:center;gap:8px;padding:4px 6px;border-radius:6px;font-size:12px;
-  color:var(--txt);cursor:pointer;text-transform:capitalize}
-.permes:hover{background:#f2f5f5}
-.permes input{width:15px;height:15px;flex:none;accent-color:var(--teal-d);cursor:pointer}
+/* itens das janelas de checkbox (mês, categorias…): compactos e uniformes
+   (label.permes p/ vencer o estilo dos rótulos .f label da barra) */
+label.permes{display:flex;align-items:center;gap:7px;padding:3.5px 6px;border-radius:6px;
+  font-size:11px;font-weight:500;letter-spacing:.01em;color:var(--txt);cursor:pointer;
+  text-transform:capitalize}
+label.permes:hover{background:#f2f5f5}
+.permes input{width:13px;height:13px;flex:none;accent-color:var(--teal-d);cursor:pointer}
 
 /* títulos */
 h2.pg{font-size:20px;letter-spacing:-.02em;margin:4px 0 2px;display:flex;align-items:center;gap:10px}
@@ -294,7 +297,7 @@ td b{font-weight:650}
   font-size:13px;min-width:220px;outline:none}
 .tctl input:focus{border-color:var(--teal)}
 .fchip{background:#f2f5f5;border:1px solid var(--line);color:var(--mut);border-radius:20px;
-  padding:6px 13px;font-size:11.5px;font-weight:700;cursor:pointer}
+  padding:6px 13px;font-size:11px;font-weight:600;cursor:pointer}
 .fchip.on{background:var(--ink);border-color:var(--ink);color:#fff}
 .more{display:block;margin:14px auto 2px;background:#f2f5f5;border:1px solid var(--line);color:var(--mut);
   border-radius:9px;padding:9px 22px;font-size:12.5px;font-weight:700;cursor:pointer}
