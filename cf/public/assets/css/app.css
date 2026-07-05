@@ -215,12 +215,16 @@ h2.pg::before{content:"";width:9px;height:9px;background:var(--teal);transform:r
 .vol-tab tr.vol-prod td{font-size:10.5px}
 .vol-tab tr.fat-total td.volfix{color:#fff}
 
-/* selo da curva ABC */
-.curva{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;
-  border-radius:6px;font-size:10.5px;font-weight:800}
-.c-A{background:#dcefe2;color:#2e7d4f}
-.c-B{background:#fdf1d8;color:#9a6d1b}
-.c-C{background:#f0f0f0;color:#7a848a}
+/* selo da curva de vendas — padrão de cores oficial da empresa (A→D azuis, DELIST vermelho) */
+.curva{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;
+  padding:0 5px;border-radius:6px;font-size:10px;font-weight:800;letter-spacing:.02em}
+.c-A{background:#143350;color:#fff}
+.c-B{background:#296BA7;color:#fff}
+.c-C{background:#438DD1;color:#fff}
+.c-D{background:#78ADDE;color:#fff}
+.c-DELIST{background:#fff;color:#d0021b;border:1.5px solid #d0021b}
+.c-LCT{background:#fff;color:var(--teal-d);border:1px solid var(--teal)}
+.c-X{background:#f0f0f0;color:#7a848a}
 
 /* tabelas do Dashboard (rankings ricos) */
 .dash-tab tr.dlin{cursor:pointer}

@@ -984,8 +984,8 @@ function renderDashRank() {
     colsProd.splice(1, 0,
       { k: "cat", t: "Família", v: (x) => rotuloCat(x.cat),
         f: (x) => `<span style="color:var(--mut);font-size:10.5px">${esc(rotuloCat(x.cat))}</span>` },
-      { k: "curva", t: "ABC", v: (x) => x.curva || "—",
-        f: (x) => x.curva ? `<span class="curva c-${esc(x.curva)}">${esc(x.curva)}</span>` : "—" });
+      { k: "curva", t: "Curva", v: (x) => ({ A: 6, B: 5, C: 4, D: 3, DELIST: 1 })[curvaNorm(x.curva)] || 2,
+        f: (x) => seloCurva(x.curva) });
     tabelaDash("dash-prod", "prod", [...colsProd, ...colsVolBase(totVP)], prods, 30, filtrarProd, S.fProd);
   }
 
@@ -1826,26 +1826,44 @@ function calcCurva() {
   for (const a of itens) (porCat[a.cat] ??= []).push(a);
   for (const lst of Object.values(porCat))
     lst.sort((x, y) => y.score - x.score).forEach((x, i) => x.rkgLinha = i + 1);
-  // CURVA SUGERIDA: ordena pela pontuação e corta pelo valor acumulado (A ≤80% · B ≤95% · C resto)
+  // CURVA SUGERIDA: ordena pela pontuação e corta pelo valor acumulado (A ≤80% · B ≤95% · C ≤99% · D resto)
   const ordScore = [...itens].sort((x, y) => y.score - x.score);
   const valTotal = ordScore.reduce((s, a) => s + a.val, 0) || 1;
   let acum = 0;
   for (const a of ordScore) {
     const antes = acum;
     acum += a.val;
-    a.curvaSug = antes < 0.80 * valTotal ? "A" : antes < 0.95 * valTotal ? "B" : "C";
+    a.curvaSug = antes < 0.80 * valTotal ? "A" : antes < 0.95 * valTotal ? "B"
+      : antes < 0.99 * valTotal ? "C" : "D";
   }
-  // MIX PRIORITÁRIO (ação sugerida): distribuição decide o que fazer com cada A
+  // MIX PRIORITÁRIO (ação sugerida): distribuição decide o que fazer com cada A; D = candidato a delist
   for (const a of itens) {
     a.acao = a.curvaSug === "A" ? (a.dist < 0.40 ? "EXPANDIR" : "DEFENDER")
       : a.curvaSug === "B" ? ((a.nGiro >= 75 && a.dist < 0.35) ? "TESTAR" : "MANTER")
-      : "CAUDA";
+      : a.curvaSug === "C" ? "CAUDA"
+      : "AVALIAR DELIST";
   }
   const rot = `${MESES[win[0].m - 1]}–${MESES[win[win.length - 1].m - 1]}/${String(win[win.length - 1].y).slice(2)}`;
   return { itens, ativos, rot };
 }
 const CORES_ACAO = { EXPANDIR: "var(--ok)", DEFENDER: "var(--teal-d)", TESTAR: "#b57f22",
-                     MANTER: "var(--mut)", CAUDA: "var(--soft)" };
+                     MANTER: "var(--mut)", CAUDA: "var(--soft)", "AVALIAR DELIST": "#d0021b" };
+
+/* curva de vendas: normalização e selo no padrão de cores da empresa (A–D azuis, DELIST vermelho) */
+function curvaNorm(c) {
+  const s = String(c || "").toUpperCase().trim();
+  if (!s) return "";
+  if (s.includes("DELIST")) return "DELIST";
+  if (/^[ABCD]$/.test(s[0]) && s.length <= 2) return s[0];
+  return s;
+}
+function seloCurva(c) {
+  const s = curvaNorm(c);
+  if (!s) return '<span style="color:var(--soft)">—</span>';
+  if (["A", "B", "C", "D", "DELIST"].includes(s)) return `<span class="curva c-${s}">${s}</span>`;
+  if (s.includes("LÇT") || s.includes("LCT") || s.includes("LAN")) return `<span class="curva c-LCT">${esc(s)}</span>`;
+  return `<span class="curva c-X">${esc(s)}</span>`;
+}
 
 /* base OFICIAL (definição manual enviada por upload) — casa por ID, com nome como reserva */
 function ofiDe(a) {
@@ -1879,7 +1897,7 @@ function renderCurvaOficial() {
     [...reg.itens].sort((a, b) => (a.rkg ?? 9e9) - (b.rkg ?? 9e9)).map((o) =>
       `<tr><td class="r"><b>${o.rkg ?? "—"}</b></td><td><b>${esc(o.item)}</b></td>
        <td class="r">${esc(o.id || "")}</td>
-       <td class="r">${o.curva ? `<span class="curva c-${esc(o.curva)}">${esc(o.curva)}</span>` : "—"}</td>
+       <td class="r">${o.curva ? seloCurva(o.curva) : "—"}</td>
        <td style="font-size:10px;font-weight:700;color:${CORES_ACAO[o.acao] || "var(--mut)"}">${esc(o.acao || "—")}</td></tr>`).join("") +
     "</tbody></table>";
 }
@@ -1928,7 +1946,7 @@ async function processarUploadCurva(file) {
       if (!item) return;
       itens.push({ item, id: cel(m.id),
         rkg: parseInt(cel(m.rkg).replace(/[^\d]/g, ""), 10) || null,
-        curva: (cel(m.curva).toUpperCase().match(/[ABC]/) || [""])[0],
+        curva: curvaNorm(cel(m.curva)),
         acao: cel(m.acao).toUpperCase() });
     });
     if (!itens.length) throw new Error("nenhuma linha de item encontrada abaixo do cabeçalho");
@@ -1988,9 +2006,9 @@ function renderCurva() {
     { k: "reprCx", t: "% REPR. VOL", r: 1, v: (x) => x.reprCx },
     { k: "dist", t: "DISTRIBUIÇÃO", r: 1, v: (x) => x.dist },
     { k: "score", t: "PONTUAÇÃO", r: 1, v: (x) => x.score },
-    { k: "curvaSug", t: "CURVA", r: 1, v: (x) => ({ A: 3, B: 2, C: 1 })[x.curvaSug] },
+    { k: "curvaSug", t: "CURVA", r: 1, v: (x) => ({ A: 5, B: 4, C: 3, D: 2 })[x.curvaSug] || 1 },
     { k: "acao", t: "MIX PRIORITÁRIO", str: 1, v: (x) => x.acao },
-    { k: "curvaOf", t: "CURVA OFICIAL", r: 1, v: (x) => ({ A: 3, B: 2, C: 1 })[(ofiDe(x) || {}).curva] || 0 },
+    { k: "curvaOf", t: "CURVA OFICIAL", r: 1, v: (x) => ({ A: 6, B: 5, C: 4, D: 3, DELIST: 1 })[(ofiDe(x) || {}).curva] || 0 },
     { k: "rkgOf", t: "RKG LINHA OFICIAL", r: 1, v: (x) => (ofiDe(x) || {}).rkg ?? 9e9 },
   ];
   const cdef = cols.find((c) => c.k === CURVA.col) || cols[11];
@@ -2018,8 +2036,7 @@ function renderCurva() {
      <td class="r"><span class="curva c-${esc(a.curvaSug)}">${a.curvaSug}</span></td>
      <td style="font-size:10px;font-weight:700;color:${CORES_ACAO[a.acao]}">${a.acao}</td>
      <td class="r">${(() => { const o = ofiDe(a); return o && o.curva
-       ? `<span class="curva c-${esc(o.curva)}" title="sua definição">${esc(o.curva)}</span>`
-       : '<span style="color:var(--soft)">—</span>'; })()}</td>
+       ? seloCurva(o.curva) : '<span style="color:var(--soft)">—</span>'; })()}</td>
      <td class="r">${(() => { const o = ofiDe(a); return o && o.rkg != null
        ? `<b title="sua definição — ranking de vendas por linha">${o.rkg}</b>`
        : '<span style="color:var(--soft)">—</span>'; })()}</td></tr>`).join("");
@@ -2108,7 +2125,7 @@ function renderVol() {
       for (const pr of prods) {
         const maxP = Math.max(1, ...clis.map((c) => pr.cli[c]?.m || 0));
         corpo += `<tr class="vol-prod">
-          <td class="volfix" style="padding-left:24px">${pr.curva ? `<span class="curva c-${esc(pr.curva)}">${esc(pr.curva)}</span> ` : ""}${esc(pr.nome)}</td>
+          <td class="volfix" style="padding-left:24px">${pr.curva ? seloCurva(pr.curva) + " " : ""}${esc(pr.nome)}</td>
           <td class="r">${fmtCel(pr.tot)}</td>` +
           clis.map((c) => celula(pr.cli[c], maxP, pr.nome, c)).join("") + "</tr>";
       }
