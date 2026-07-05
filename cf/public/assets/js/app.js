@@ -1345,14 +1345,15 @@ async function exportExcel() {
         (CURVA.canais.length ? ` · canais: ${CURVA.canais.join(" + ")}` : ""),
         ["RKG GERAL", "CATEGORIA", "ITEM", "ID", "EAN", "RKG LINHA",
          "Valor acum. 6m", "Qtde acum. 6m", "% Repr. valor", "% Repr. vol", "Clientes", "Distribuição",
-         "Nota valor", "Nota caixas", "Nota giro", "PONTUAÇÃO", "CURVA", "MIX PRIORITÁRIO", "RKG OFICIAL"],
+         "Nota valor", "Nota caixas", "Nota giro", "PONTUAÇÃO", "CURVA", "MIX PRIORITÁRIO",
+         "CURVA OFICIAL", "RKG LINHA OFICIAL"],
         itens.map((a) => [a.rkgGeral, a.cat, a.nome, a.id, a.ean, a.rkgLinha,
           Math.round(a.val), Math.round(a.cx), a.reprVal, a.reprCx, a.ncli, a.dist,
           Math.round(a.nVal), Math.round(a.nCx), Math.round(a.nGiro), Math.round(a.score * 10) / 10,
-          a.curvaSug, a.acao, (ofiDe(a) || {}).rkg ?? null]),
+          a.curvaSug, a.acao, (ofiDe(a) || {}).curva || null, (ofiDe(a) || {}).rkg ?? null]),
         [XL.num, null, null, null, null, XL.num, XL.money, XL.num, XL.pct, XL.pct, XL.num, XL.pct,
-         XL.num, XL.num, XL.num, "0.0", null, null, XL.num],
-        [9, 22, 36, 8, 15, 9, 14, 12, 10, 10, 9, 11, 9, 9, 9, 11, 7, 15, 10]);
+         XL.num, XL.num, XL.num, "0.0", null, null, null, XL.num],
+        [9, 22, 36, 8, 15, 9, 14, 12, 10, 10, 9, 11, 9, 9, 9, 11, 7, 15, 8, 10]);
 
     } else if (v === "metas") {
       const nivel = (S.data.escopo.perfil === "gestor" && !S.fGer && !S.fVend) ? "ger"
@@ -1873,8 +1874,8 @@ function renderCurvaOficial() {
   $("curva-oficial-info").textContent =
     `VIGENTE — atualizada em ${new Date(reg.ts).toLocaleString("pt-BR")} · ${reg.itens.length} itens`;
   $("curva-oficial-tab").innerHTML =
-    `<table class="fat-tab"><thead><tr><th class="r">RKG</th><th>ITEM</th><th class="r">ID</th>
-      <th class="r">CURVA</th><th>MIX PRIORITÁRIO</th></tr></thead><tbody>` +
+    `<table class="fat-tab"><thead><tr><th class="r">RKG LINHA</th><th>ITEM</th><th class="r">ID</th>
+      <th class="r">CURVA DE VENDAS</th><th>MIX PRIORITÁRIO</th></tr></thead><tbody>` +
     [...reg.itens].sort((a, b) => (a.rkg ?? 9e9) - (b.rkg ?? 9e9)).map((o) =>
       `<tr><td class="r"><b>${o.rkg ?? "—"}</b></td><td><b>${esc(o.item)}</b></td>
        <td class="r">${esc(o.id || "")}</td>
@@ -1890,23 +1891,30 @@ async function processarUploadCurva(file) {
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(await file.arrayBuffer());
     const ws = wb.worksheets[0];
+    // cabeçalhos aceitos (flexível): ITEM/PRODUTO(S), ID/ID_PRODUTO/SKU, EAN,
+    // CURVA (DE VENDAS), RANKING/RKG DE VENDAS POR LINHA (prioridade) ou RKG geral, MIX/PRIORIDADE
+    const ehItem = (v) => v === "ITEM" || (v.includes("PRODUTO") && !v.includes("ID"));
+    const ehId = (v) => v === "ID" || v === "SKU" || (v.includes("ID") && v.includes("PROD"));
     let hdr = 0; const m = {};
     ws.eachRow((row, n) => {
       if (hdr) return;
       const vals = (row.values || []).map((v) =>
         String(v != null && typeof v === "object" ? (v.text ?? v.result ?? "") : (v ?? "")).toUpperCase().trim());
-      if (vals.includes("ITEM")) {
+      if (vals.some(ehItem)) {
         hdr = n;
         vals.forEach((v, i) => {
-          if (v === "ITEM") m.item = i;
-          else if (v === "ID") m.id = i;
-          else if (m.rkg == null && v.includes("RKG")) m.rkg = i;
+          if (!v) return;
+          if (m.item == null && ehItem(v)) m.item = i;
+          else if (m.id == null && ehId(v)) m.id = i;
+          else if ((v.includes("RKG") || v.includes("RANKING")) && v.includes("LINHA")) m.rkg = i;      // prioridade
+          else if (m.rkgGeral == null && (v.includes("RKG") || v.includes("RANKING"))) m.rkgGeral = i;  // reserva
           else if (m.curva == null && v.startsWith("CURVA")) m.curva = i;
           else if (m.acao == null && (v.includes("MIX") || v.includes("PRIORIT"))) m.acao = i;
         });
+        if (m.rkg == null) m.rkg = m.rkgGeral;   // sem coluna "por linha", usa o RKG que houver
       }
     });
-    if (!hdr || m.item == null) throw new Error("não encontrei a coluna ITEM no arquivo");
+    if (!hdr || m.item == null) throw new Error("não encontrei a coluna do ITEM/PRODUTO no arquivo");
     const itens = [];
     ws.eachRow((row, n) => {
       if (n <= hdr) return;
@@ -1932,7 +1940,8 @@ async function processarUploadCurva(file) {
     CURVA.oficial = { itens, ts: j.ts };
     msg.innerHTML = `<div class="note" style="background:#e8f6ee;border-color:#bfe3cd;color:#1d6b3f">
       ✔ <b>Sistema atualizado!</b> Sua base com ${itens.length} itens é a regra vigente desde
-      ${new Date(j.ts).toLocaleString("pt-BR")} — ela aparece abaixo e na coluna RKG OFICIAL da análise.</div>`;
+      ${new Date(j.ts).toLocaleString("pt-BR")} — a <b>Curva de Vendas</b> e o <b>Ranking por Linha</b>
+      oficiais aparecem abaixo e nas colunas CURVA OFICIAL / RKG LINHA OFICIAL da análise.</div>`;
     renderCurva();
     $("card-curva-oficial").scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (e) {
@@ -1981,7 +1990,8 @@ function renderCurva() {
     { k: "score", t: "PONTUAÇÃO", r: 1, v: (x) => x.score },
     { k: "curvaSug", t: "CURVA", r: 1, v: (x) => ({ A: 3, B: 2, C: 1 })[x.curvaSug] },
     { k: "acao", t: "MIX PRIORITÁRIO", str: 1, v: (x) => x.acao },
-    { k: "rkgOf", t: "RKG OFICIAL", r: 1, v: (x) => (ofiDe(x) || {}).rkg ?? 9e9 },
+    { k: "curvaOf", t: "CURVA OFICIAL", r: 1, v: (x) => ({ A: 3, B: 2, C: 1 })[(ofiDe(x) || {}).curva] || 0 },
+    { k: "rkgOf", t: "RKG LINHA OFICIAL", r: 1, v: (x) => (ofiDe(x) || {}).rkg ?? 9e9 },
   ];
   const cdef = cols.find((c) => c.k === CURVA.col) || cols[11];
   lista.sort((a, b) => cdef.str
@@ -2007,8 +2017,11 @@ function renderCurva() {
        <b style="color:var(--teal-d)">${fmtBR(a.score, 1)}</b></td>
      <td class="r"><span class="curva c-${esc(a.curvaSug)}">${a.curvaSug}</span></td>
      <td style="font-size:10px;font-weight:700;color:${CORES_ACAO[a.acao]}">${a.acao}</td>
+     <td class="r">${(() => { const o = ofiDe(a); return o && o.curva
+       ? `<span class="curva c-${esc(o.curva)}" title="sua definição">${esc(o.curva)}</span>`
+       : '<span style="color:var(--soft)">—</span>'; })()}</td>
      <td class="r">${(() => { const o = ofiDe(a); return o && o.rkg != null
-       ? `<b title="sua definição${o.curva ? " · curva " + esc(o.curva) : ""}${o.acao ? " · " + esc(o.acao) : ""}">${o.rkg}</b>`
+       ? `<b title="sua definição — ranking de vendas por linha">${o.rkg}</b>`
        : '<span style="color:var(--soft)">—</span>'; })()}</td></tr>`).join("");
   const nA = itens.filter((a) => a.curvaSug === "A").length;
   const nExp = itens.filter((a) => a.acao === "EXPANDIR").length;
@@ -2018,7 +2031,7 @@ function renderCurva() {
     ` · curva A = ${nA} itens (80% do valor) · ${nExp} p/ EXPANDIR · pesos 45/30/25`;
   $("curva-conteudo").innerHTML =
     `<table class="fat-tab"><thead><tr>${th}</tr></thead><tbody>${corpo ||
-      '<tr><td colspan="16" class="empty">Sem itens.</td></tr>'}</tbody></table>`;
+      '<tr><td colspan="17" class="empty">Sem itens.</td></tr>'}</tbody></table>`;
   document.querySelectorAll("#curva-conteudo th.ord").forEach((h) => h.addEventListener("click", () => {
     const k = h.dataset.k;
     if (CURVA.col === k) CURVA.dir *= -1;
