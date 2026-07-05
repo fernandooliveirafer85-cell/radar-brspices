@@ -355,10 +355,6 @@ def main():
 
     # ================= cubo MIX (categorias × cliente e produtos × vendedor) =================
     pinfo = lambda pid: prod_info.get(pid, ("", "", "", "", ""))
-    # identificação dos itens (ID + EAN) por nome de produto do painel — p/ a guia Curva A
-    prod_ids = {}
-    for pid, (cat, fam, prodp, curva, ean) in prod_info.items():
-        prod_ids.setdefault(prodp or f"ID {pid}", {"id": pid, "ean": ean})
     fat["PID"] = fat["ID_PRODUTO"].map(norm_pid)
     fat["CAT"] = fat["PID"].map(lambda p: pinfo(p)[0] or "OUTROS")
     fat["PRODP"] = [pinfo(p)[2] or str(n).strip() for p, n in zip(fat["PID"], fat["NOME PRODUTO"])]
@@ -367,6 +363,17 @@ def main():
     fat["BAND"] = fat["CNPJ_N"].map(lambda c: dim.get(c, ("(DESCONHECIDO)",) * 4)[0])
     fat["VEND"] = fat["CNPJ_N"].map(lambda c: dim.get(c, ("", "SEM CADASTRO", "SEM CADASTRO", ""))[1])
     fat["GER"] = fat["CNPJ_N"].map(lambda c: dim.get(c, ("", "SEM CADASTRO", "SEM CADASTRO", ""))[2])
+    # identificação dos itens (ID/EAN): quando o mesmo produto do painel tem VÁRIOS SKUs
+    # (recadastro), vale o SKU com venda MAIS RECENTE (desempate: maior venda no ano)
+    ult_pid = fat.groupby("PID")["EMISSAO"].max()
+    val_pid = fat[fat["ANO"] >= ano_atual - 1].groupby("PID")["TOTAL"].sum()
+    _cand = {}
+    for pid, (cat, fam, prodp, curva, ean) in prod_info.items():
+        nome = prodp or f"ID {pid}"
+        chave = (ult_pid.get(pid, pd.Timestamp.min), float(val_pid.get(pid, 0.0)))
+        if nome not in _cand or chave > _cand[nome][0]:
+            _cand[nome] = (chave, {"id": pid, "ean": ean})
+    prod_ids = {n: d for n, (_, d) in _cand.items()}
     tem_dev_prod = "ID_PRODUTO" in dev.columns
     if tem_dev_prod:
         dev["PID"] = dev["ID_PRODUTO"].map(norm_pid)
