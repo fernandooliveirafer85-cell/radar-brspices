@@ -779,16 +779,17 @@ function metDash(f25, f26, meta) {
   return { f25, f26, cr: f25 > 0 ? (f26 - f25) / f25 : (f26 > 0 ? 1 : null),
            meta, ating: meta ? f26 / meta : null, gap: meta ? f26 - meta : null };
 }
-/* agrega os clientes-bandeira (soma as fatias por vendedor) no período selecionado */
-function dashClientes(rows, meses) {
-  const { ano, mes_atual } = S.data.periodo;
+/* agrega os clientes-bandeira (soma as fatias por vendedor).
+   Base de vendas SEMPRE YTD FIXA (jan..mês fechado) — não segue o período selecionado. */
+function dashClientes(rows) {
+  const meses = seq(1, mesFechado());
   const map = {};
   for (const p of rows) {
     const g = (map[p.cliente] ??= { nome: p.cliente, f25: 0, f26: 0, meta: 0, ult: null });
     const a = serie(p, S.ano), b = serie(p, S.ano - 1);
     for (const m of meses) {
       if (a) g.f26 += a[m - 1] || 0;
-      if (b) g.f25 += (b[m - 1] || 0) * ((S.ano === ano && m === mes_atual) ? S.fracMes : 1);
+      if (b) g.f25 += b[m - 1] || 0;
       if (S.ano === 2026) g.meta += p.meta[m - 1] || 0;
     }
     if (p.ult && (!g.ult || p.ult > g.ult)) g.ult = p.ult;
@@ -839,8 +840,8 @@ function tabelaDash(el, key, cols, itens, topN, onRow, ativo) {
 function renderDashRank() {
   const rows = linhas(), meses = mesesSel(), d = S.data;
 
-  // Top 20 clientes → clique abre o Faturamento com o cliente buscado
-  const cli = dashClientes(rows, meses);
+  // Top 20 clientes (base de vendas sempre YTD) → clique analisa o cliente na guia
+  const cli = dashClientes(rows);
   const totCli = cli.reduce((s, x) => s + x.f26, 0);
   const colUlt = { k: "ult", t: "Últ. Compra", v: (x) => x.ult ? Date.parse(x.ult) : -Infinity,
     f: (x) => { const dd = diasSemCompra(x.ult);
@@ -888,7 +889,7 @@ function renderDashRank() {
     { k: "crv", t: "Cresc. cx", r: 1, v: (x) => x.crv,
       f: (x) => `<span class="farolp ${farol(x.crv)}">${x.crv == null ? "—" : (x.crv >= 0 ? "" : "−") + fmtBR(Math.abs(x.crv) * 100, 0) + "%"}</span>` },
     { k: "reprv", t: "% Repr. cx", r: 1, v: (x) => x.v26, f: (x) => fmtBR(x.v26 / (totV26 || 1) * 100, 1) + "%" },
-    { k: "ncli", t: "Base compr.", r: 1, v: (x) => x.ncli, f: (x) => fmtBR(x.ncli) },
+    { k: "ncli", t: "Base compr. (6 m)", r: 1, v: (x) => x.ncli, f: (x) => fmtBR(x.ncli) },
     { k: "pbase", t: "% da base", r: 1, v: (x) => x.ncli, f: dotBase },
   ];
 
@@ -901,7 +902,7 @@ function renderDashRank() {
     colsCat[0].f = (x) => `<b>${esc(rotuloCat(x.nome))}</b>`;
     tabelaDash("dash-cat", "cat", [...colsCat, ...colsVolBase(totVCat)], cats, 30, filtrarCat, S.fCat);
 
-    const prods = dashProdutos(meses);
+    const prods = dashProdutos();
     const totP = prods.reduce((s, x) => s + x.f26, 0);
     const totVP = prods.reduce((s, x) => s + x.v26, 0);
     const colsProd = colsDash("PRODUTO", totP).filter((c) => !["meta", "ating", "gap"].includes(c.k));
@@ -995,8 +996,10 @@ function dashCategorias(meses) {
   return Object.values(map).filter((g) => g.f25 || g.f26)
     .map((g) => volDash({ ...g, ncli: g._cli.size, ...metDash(g.f25, g.f26, 0) }));
 }
-/* Produtos: cubo MIX produto×CLIENTE — segue todos os filtros via conjunto de clientes do recorte */
-function dashProdutos(meses) {
+/* Produtos: cubo MIX produto×CLIENTE — segue os filtros via conjunto de clientes do recorte.
+   Base de vendas SEMPRE YTD FIXA (jan..mês fechado); base compradora = últimos 6 meses. */
+function dashProdutos() {
+  const meses = seq(1, mesFechado());
   let r = MIX.cube.prods;
   if (filtrado()) {
     const set = new Set(linhas().map((p) => p.cliente));   // clientes do recorte atual
@@ -1009,9 +1012,9 @@ function dashProdutos(meses) {
     const g = (map[p.prod] ??= { nome: p.prod, cat: p.cat, curva: p.curva,
                                  f25: 0, f26: 0, v25: 0, v26: 0, ncli: ncli[p.prod] || 0 });
     g.f26 += somaMeses(p.m26, meses);
-    g.f25 += somaMesesPr(p.m25, meses);
+    g.f25 += somaMeses(p.m25, meses);
     g.v26 += somaMeses(p.q26, meses);
-    g.v25 += somaMesesPr(p.q25 || [], meses);
+    g.v25 += somaMeses(p.q25 || [], meses);
     if (!g.curva && p.curva) g.curva = p.curva;
   }
   return Object.values(map).filter((g) => g.f25 || g.f26)
@@ -1211,8 +1214,8 @@ async function exportExcel() {
       const linR = (x, i) => [i + 1, nomeVend(x.nome), Math.round(x.f25), Math.round(x.f26), x.cr,
         x.meta ? Math.round(x.meta) : null, x.ating, x.gap == null ? null : Math.round(x.gap)];
       const mapR = (o) => ({ nome: o.nome, ...metDash(o.ly, o.realizado, o.meta) });
-      xlTabela(ws, "Top 20 clientes", cabR,
-        dashClientes(rows, meses).sort((a, b) => b.f26 - a.f26).slice(0, 20).map(linR), fmtsR,
+      xlTabela(ws, "Top 20 clientes (sempre YTD)", cabR,
+        dashClientes(rows).sort((a, b) => b.f26 - a.f26).slice(0, 20).map(linR), fmtsR,
         [5, 34, 14, 14, 10, 13, 9, 13]);
       if (S.data.escopo.perfil === "gestor")
         xlTabela(ws, "Gerentes", cabR, agrupar(rows, "ger", meses).map(mapR).map(linR), fmtsR);
